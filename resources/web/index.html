@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hemera</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9728;</text></svg>">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">&#9728; Hemera</div>
+  <nav id="nav">
+    <a href="#dashboard">Dashboard</a>
+    <a href="#models">Models</a>
+    <a href="#engines">Engines</a>
+    <a href="#dirs">Directories</a>
+    <a href="#proxies">Proxies</a>
+    <a href="#settings">Settings</a>
+  </nav>
+  <div id="statuschip" title="server status">&#8230;</div>
+</header>
+<main id="main">
+  <section id="sec-dashboard" class="section"></section>
+  <section id="sec-models" class="section"></section>
+  <section id="sec-engines" class="section"></section>
+  <section id="sec-dirs" class="section"></section>
+  <section id="sec-proxies" class="section"></section>
+  <section id="sec-settings" class="section"></section>
+</main>
+<div id="modal" class="hidden"><div id="modal-card" class="card"></div></div>
+<div id="toast" class="hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>

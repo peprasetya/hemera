@@ -1,0 +1,20 @@
+# systemd unit for hemera — install as /etc/systemd/system/hemera.service
+#   systemctl daemon-reload && systemctl enable --now hemera
+# Logs go to journalctl -u hemera (hemera prints no timestamps; journald adds them).
+[Unit]
+Description=Hemera AI engine manager & API gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/hemera
+ExecStart=/usr/bin/java -jar /opt/hemera/hemera.jar
+Restart=on-failure
+RestartSec=3
+SyslogIdentifier=hemera
+# Uncomment to override the data directory:
+# Environment=HEMERA_HOME=/opt/hemera
+
+[Install]
+WantedBy=multi-user.target

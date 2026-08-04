@@ -1,0 +1,10 @@
+bin/
+hemera.jar
+hemera.json
+binary/
+*.tmp
+.DS_Store
+
+# local-only: predecessor prototype and personal deployment script
+nexus_server.py
+deploy.sh
