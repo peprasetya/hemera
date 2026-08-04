@@ -139,6 +139,66 @@ public final class Streams
     return c;
   }
 
+  /**
+   * Relay an SSE stream unchanged except for the model identifier, which is rewritten to the
+   * name the client asked for. Engines report the file path they were launched with, and
+   * upstream providers report their own ids; neither is meaningful to the caller.
+   */
+  public static void relaySseWithModel(InputStream is, OutputStream os, String model) throws IOException
+  {
+    try
+    {
+      Upstream.forEachSse(is, (event, data) -> {
+        try
+        {
+          if (data.isEmpty() || data.startsWith("["))
+          {
+            Router.sse(os, event, data); // [DONE] and other sentinels pass straight through
+            return;
+          }
+          Map<String, Object> chunk = Json.parseObj(data);
+          applyModel(chunk, model);
+          Router.sse(os, event, chunk);
+        }
+        catch (IOException e)
+        {
+          throw new UncheckedIOException(e);
+        }
+        catch (IllegalArgumentException e)
+        {
+          try
+          {
+            Router.sse(os, event, data); // not JSON: forward verbatim
+          }
+          catch (IOException io)
+          {
+            throw new UncheckedIOException(io);
+          }
+        }
+      });
+    }
+    catch (UncheckedIOException e)
+    {
+      throw e.getCause();
+    }
+  }
+
+  /**
+   * Replace the model identifier in a response body with the configured name.
+   * Covers the OpenAI shape ({@code model}) and the Anthropic streaming shape
+   * ({@code message.model} inside message_start).
+   */
+  @SuppressWarnings("unchecked")
+  public static void applyModel(Map<String, Object> body, String model)
+  {
+    if (body == null || model == null)
+      return;
+    if (body.containsKey("model"))
+      body.put("model", model);
+    if (body.get("message") instanceof Map<?, ?> msg && ((Map<String, Object>) msg).containsKey("model"))
+      ((Map<String, Object>) msg).put("model", model);
+  }
+
   // =========================================================================
   // Sinks
   // =========================================================================
@@ -147,15 +207,20 @@ public final class Streams
   public static final class OpenAiSseSink implements ChunkSink
   {
     private final OutputStream os;
+    private final String model;
 
-    public OpenAiSseSink(OutputStream os)
+    public OpenAiSseSink(OutputStream os, String model)
     {
       this.os = os;
+      this.model = model;
     }
 
     @Override
     public void chunk(Map<String, Object> c) throws IOException
     {
+      // chunks synthesized from another dialect carry no identifier of their own
+      if (model != null)
+        c.put("model", model);
       Router.sse(os, null, c);
     }
 

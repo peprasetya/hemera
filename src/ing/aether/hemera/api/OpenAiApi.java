@@ -65,10 +65,14 @@ public final class OpenAiApi
     if (Json.bool(body, "stream", false))
     {
       OutputStream os = Router.startStream(ex, "text/event-stream");
-      ProxyDispatcher.relay(Upstream.postStream(url, body, null), os);
+      Streams.relaySseWithModel(Upstream.postStream(url, body, null), os, raw);
     }
     else
-      Router.sendJson(ex, 200, Upstream.postJson(url, body, null));
+    {
+      Map<String, Object> resp = Upstream.postJson(url, body, null);
+      Streams.applyModel(resp, raw);
+      Router.sendJson(ex, 200, resp);
+    }
     inst.touch();
   }
 
@@ -91,10 +95,14 @@ public final class OpenAiApi
     if (Json.bool(body, "stream", false))
     {
       OutputStream os = Router.startStream(ex, "text/event-stream");
-      ProxyDispatcher.relay(Upstream.postStream(url, body, null), os);
+      Streams.relaySseWithModel(Upstream.postStream(url, body, null), os, raw);
     }
     else
-      Router.sendJson(ex, 200, Upstream.postJson(url, body, null));
+    {
+      Map<String, Object> resp = Upstream.postJson(url, body, null);
+      Streams.applyModel(resp, raw);
+      Router.sendJson(ex, 200, resp);
+    }
     inst.touch();
   }
 

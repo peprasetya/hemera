@@ -1,7 +1,5 @@
 package ing.aether.hemera.api;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -82,17 +80,6 @@ public final class ProxyDispatcher
     return Json.str(proxy, "upstreamModel", Json.str(body, "model", ""));
   }
 
-  public static void relay(InputStream is, OutputStream os) throws IOException
-  {
-    byte[] buf = new byte[8192];
-    int n;
-    while ((n = is.read(buf)) > 0)
-    {
-      os.write(buf, 0, n);
-      os.flush();
-    }
-  }
-
   // ---- OpenAI-dialect client (/v1/chat/completions) -----------------------
 
   public void openaiChat(HttpExchange ex, Map<String, Object> proxy, Map<String, Object> body) throws Exception
@@ -108,7 +95,7 @@ public final class ProxyDispatcher
       if (stream)
       {
         OutputStream os = Router.startStream(ex, "text/event-stream");
-        Streams.pumpAnthropicSse(Upstream.postStream(url, aBody, headers(proxy)), new Streams.OpenAiSseSink(os));
+        Streams.pumpAnthropicSse(Upstream.postStream(url, aBody, headers(proxy)), new Streams.OpenAiSseSink(os, requested));
       }
       else
         Router.sendJson(ex, 200,
@@ -121,10 +108,14 @@ public final class ProxyDispatcher
       if (stream)
       {
         OutputStream os = Router.startStream(ex, "text/event-stream");
-        relay(Upstream.postStream(url, body, headers(proxy)), os);
+        Streams.relaySseWithModel(Upstream.postStream(url, body, headers(proxy)), os, requested);
       }
       else
-        Router.sendJson(ex, 200, Upstream.postJson(url, body, headers(proxy)));
+      {
+        Map<String, Object> resp = Upstream.postJson(url, body, headers(proxy));
+        Streams.applyModel(resp, requested);
+        Router.sendJson(ex, 200, resp);
+      }
     }
   }
 
@@ -134,15 +125,20 @@ public final class ProxyDispatcher
   {
     if ("anthropic".equals(type(proxy)))
       throw new HttpError(400, "endpoint not supported for anthropic upstream proxy");
+    String requested = Json.str(body, "model", "");
     body.put("model", upstreamModel(proxy, body));
     String url = base(proxy) + path;
     if (Json.bool(body, "stream", false))
     {
       OutputStream os = Router.startStream(ex, "text/event-stream");
-      relay(Upstream.postStream(url, body, headers(proxy)), os);
+      Streams.relaySseWithModel(Upstream.postStream(url, body, headers(proxy)), os, requested);
     }
     else
-      Router.sendJson(ex, 200, Upstream.postJson(url, body, headers(proxy)));
+    {
+      Map<String, Object> resp = Upstream.postJson(url, body, headers(proxy));
+      Streams.applyModel(resp, requested);
+      Router.sendJson(ex, 200, resp);
+    }
   }
 
   // ---- Ollama-dialect client (/api/chat, /api/generate) -------------------
@@ -243,10 +239,14 @@ public final class ProxyDispatcher
       if (stream)
       {
         OutputStream os = Router.startStream(ex, "text/event-stream");
-        relay(Upstream.postStream(url, body, headers(proxy)), os);
+        Streams.relaySseWithModel(Upstream.postStream(url, body, headers(proxy)), os, requested);
       }
       else
-        Router.sendJson(ex, 200, Upstream.postJson(url, body, headers(proxy)));
+      {
+        Map<String, Object> resp = Upstream.postJson(url, body, headers(proxy));
+        Streams.applyModel(resp, requested);
+        Router.sendJson(ex, 200, resp);
+      }
     }
     else
     {
