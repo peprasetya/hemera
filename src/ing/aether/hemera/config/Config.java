@@ -83,6 +83,8 @@ public final class Config
     e.put("healthPath", "/health");
     e.put("trackedVariants", new ArrayList<>(List.of("ubuntu-vulkan-x64", "ubuntu-rocm")));
     e.put("defaultArgs", new ArrayList<>(List.of("--no-webui")));
+    e.put("libraryAutoDetect", Boolean.TRUE);
+    e.put("libraryPaths", new ArrayList<>());
     e.put("installed", new ArrayList<>());
     return e;
   }
@@ -140,6 +142,12 @@ public final class Config
   public synchronized List<String> modelDirs()
   {
     return Json.strList(data, "modelDirs");
+  }
+
+  /** Extra glob patterns searched for engine runtime libraries, on top of the built-in defaults. */
+  public synchronized List<String> librarySearchRoots()
+  {
+    return Json.strList(data, "librarySearchRoots");
   }
 
   public synchronized List<Map<String, Object>> models()

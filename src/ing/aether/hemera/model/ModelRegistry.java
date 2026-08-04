@@ -18,9 +18,12 @@ import ing.aether.hemera.http.HttpError;
 import ing.aether.hemera.json.Json;
 
 /**
- * Configured-model operations shared by the Ollama API (`ollama rm`) and the web UI:
- * file-usage cross-reference and safe deletion (a model file is only removed from disk
- * when no other configured model references it, and never inside an Ollama blob store).
+ * Configured-model operations shared by the Ollama API and the web UI.
+ *
+ * <p>Removing a configured model is always a config-only operation — model files are
+ * expensive to re-obtain, so nothing on disk is touched. Deleting a file is a separate,
+ * explicit action that also drops any configured models pointing at it. Files inside an
+ * Ollama repository are never deletable: they belong to ollama's own content store.
  */
 public final class ModelRegistry
 {
@@ -64,56 +67,93 @@ public final class ModelRegistry
   }
 
   /**
-   * Delete a configured model (ollama rm semantics). When deleteFiles is true, files it
-   * referenced are removed from disk unless another configured model still uses them or
-   * they live inside an Ollama blob store (those belong to ollama).
+   * Remove a configured model. Files on disk are never touched — use
+   * {@link #deleteFile(String)} for that.
    */
-  public Map<String, Object> deleteModel(String name, boolean deleteFiles)
+  public Map<String, Object> deleteModel(String name)
   {
     Map<String, Object> model = cfg.findModel(name);
     if (model == null)
       throw new HttpError(404, "model '" + name + "' not found");
     instances.stop(name);
     cfg.removeModel(name);
+    Log.info("models", "Removed configured model '" + name + "' (files left on disk)");
+    return Json.map("name", name, "removedModels", List.of(name), "deletedFiles", List.of());
+  }
+
+  /**
+   * Delete a model file from disk, together with every configured model that referenced
+   * it. Multi-part GGUFs are removed as a set. Refuses anything inside an Ollama
+   * repository or outside the configured model directories.
+   */
+  public Map<String, Object> deleteFile(String path)
+  {
+    String canon = canonical(Config.expandUser(path));
+    Path file = Path.of(canon);
+    if (!Files.isRegularFile(file))
+      throw new HttpError(404, "file not found: " + canon);
+    if (isOllamaManaged(file))
+      throw new HttpError(403, "this file belongs to an Ollama repository and is managed by "
+          + "ollama — remove it with 'ollama rm' instead");
+    if (!insideModelDir(file))
+      throw new HttpError(403, "refusing to delete a file outside the configured model "
+          + "directories: " + canon);
+
+    // Drop configured models that point at this file first, so nothing is left dangling.
+    List<String> removedModels = new ArrayList<>();
+    for (String name : List.copyOf(fileUsage().getOrDefault(canon, List.of())))
+    {
+      instances.stop(name);
+      cfg.removeModel(name);
+      removedModels.add(name);
+    }
 
     List<String> deleted = new ArrayList<>();
-    List<String> kept = new ArrayList<>();
-    if (deleteFiles)
+    List<String> failed = new ArrayList<>();
+    for (Path p : expandParts(file))
     {
-      Map<String, List<String>> usage = fileUsage(); // usage after removal
-      for (String ref : references(model))
+      try
       {
-        String canon = canonical(ref);
-        if (usage.containsKey(canon))
-        {
-          kept.add(ref + " (used by " + String.join(", ", usage.get(canon)) + ")");
-          continue;
-        }
-        if (canon.contains("/blobs/"))
-        {
-          kept.add(ref + " (ollama-managed blob, not deleted)");
-          continue;
-        }
-        for (Path p : expandParts(Path.of(canon)))
-        {
-          try
-          {
-            if (Files.deleteIfExists(p))
-            {
-              deleted.add(p.toString());
-              Log.info("models", "Deleted file " + p);
-            }
-          }
-          catch (IOException e)
-          {
-            kept.add(p + " (delete failed: " + e.getMessage() + ")");
-          }
-        }
+        if (Files.deleteIfExists(p))
+          deleted.add(p.toString());
+      }
+      catch (IOException e)
+      {
+        failed.add(p + " (" + e.getMessage() + ")");
       }
     }
-    Log.info("models", "Removed model '" + name + "'"
-        + (deleted.isEmpty() ? "" : ", deleted " + deleted.size() + " file(s)"));
-    return Json.map("name", name, "deletedFiles", deleted, "keptFiles", kept);
+    Log.info("models", "Deleted " + deleted.size() + " file(s) for " + canon
+        + (removedModels.isEmpty() ? "" : ", also removed configured model(s): "
+            + String.join(", ", removedModels)));
+    if (!failed.isEmpty())
+      Log.warn("models", "Could not delete: " + String.join(", ", failed));
+    return Json.map("path", canon, "deletedFiles", deleted,
+        "removedModels", removedModels, "failed", failed);
+  }
+
+  /** Files living in an ollama content store (…/blobs/sha256-…) are off limits. */
+  public static boolean isOllamaManaged(Path file)
+  {
+    Path parent = file.toAbsolutePath().getParent();
+    if (parent == null)
+      return false;
+    if (!"blobs".equals(String.valueOf(parent.getFileName())))
+      return false;
+    Path repo = parent.getParent();
+    return repo != null && Files.isDirectory(repo.resolve("manifests"));
+  }
+
+  /** Only files under a configured model directory may be deleted. */
+  private boolean insideModelDir(Path file)
+  {
+    Path abs = file.toAbsolutePath().normalize();
+    for (String dir : cfg.modelDirs())
+    {
+      Path root = Path.of(Config.expandUser(dir)).toAbsolutePath().normalize();
+      if (abs.startsWith(root))
+        return true;
+    }
+    return false;
   }
 
   /** For a multi-part gguf, all sibling part files; otherwise just the file itself. */

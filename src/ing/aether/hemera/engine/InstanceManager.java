@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -131,12 +132,31 @@ public final class InstanceManager
     pb.redirectErrorStream(true);
     pb.directory(binDir.toFile());
     Map<String, String> env = pb.environment();
-    String ld = env.get("LD_LIBRARY_PATH");
-    env.put("LD_LIBRARY_PATH", ld == null || ld.isEmpty() ? binDir.toString() : binDir + ":" + ld);
     for (Map.Entry<String, Object> e : Json.obj(engineCfg.get("env")).entrySet())
       env.put(e.getKey(), String.valueOf(e.getValue()));
     for (Map.Entry<String, Object> e : Json.obj(model.get("env")).entrySet())
       env.put(e.getKey(), String.valueOf(e.getValue()));
+
+    // The engine's own directory first, then whatever its GPU runtime needs (ROCm, CUDA,
+    // oneAPI, ...), then anything the environment or model config already asked for.
+    LibraryResolver.Result libs = LibraryResolver.resolve(cfg, engineName, binDir);
+    LinkedHashSet<String> ldPath = new LinkedHashSet<>();
+    ldPath.add(binDir.toString());
+    for (Path p : libs.searchPaths())
+      ldPath.add(p.toString());
+    String inherited = env.get("LD_LIBRARY_PATH");
+    if (inherited != null && !inherited.isEmpty())
+      ldPath.addAll(List.of(inherited.split(":")));
+    env.put("LD_LIBRARY_PATH", String.join(":", ldPath));
+
+    if (!libs.missing().isEmpty())
+      Log.warn("instance", "'" + name + "' may fall back to CPU: " + libs.missing().size()
+          + " shared librar" + (libs.missing().size() == 1 ? "y" : "ies") + " not found ("
+          + String.join(", ", libs.missing()) + "). Install the matching runtime, or add its"
+          + " directory to engines." + engineName + ".libraryPaths in hemera.json.");
+    else if (!libs.resolved().isEmpty())
+      Log.info("instance", "Runtime libraries for '" + name + "' found in "
+          + String.join(", ", libs.searchPaths().stream().map(Path::toString).toList()));
 
     Log.info("instance", "Starting '" + name + "' on port " + port + " (" + engineDesc + ")");
     Log.debug("instance", "command: " + String.join(" ", cmd));

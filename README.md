@@ -53,11 +53,39 @@ third-party assets, follows your OS light/dark theme, works on phone and desktop
 - **Models** — scanned GGUF files (multi-part grouped, mmproj/mtp companions detected, ollama
   repositories read natively) with per-file usage cross-reference; configure one file as several
   named variants with different args, environment, and engine pins.
-- **Engines** — installed versions/variants showing which models use each binary, a GitHub release
-  browser filtered to your tracked variants, download progress, and the full rollback history.
+- **Engines** — installed versions/variants showing which models use each binary, whether the GPU
+  runtime each build needs was actually found, a GitHub release browser filtered to your tracked
+  variants, download progress, and the full rollback history.
 - **Directories** — model search paths, including ollama repositories.
 - **Proxies** — external providers exposed as local model names.
 - **Settings** — port, log level, keep-alive, per-engine default arguments.
+
+## Finding GPU runtimes
+
+A llama.cpp ROCm or CUDA build needs vendor libraries that are usually *not* on the default loader
+path — and when they are missing the engine does not fail, it quietly runs on CPU at a fraction of
+the speed. Hemera detects this instead of leaving you to guess.
+
+Before launching an engine it reads the ELF headers of the build's own binaries to learn which
+shared libraries they ask for, discards the ones the dynamic loader can already resolve, and
+searches well-known runtime locations for the rest, following transitive dependencies. Whatever it
+finds is added to `LD_LIBRARY_PATH` for that process only; whatever it cannot find is reported:
+
+```
+INFO  [instance] Runtime libraries for 'qwen3-coder' found in /opt/rocm/lib
+WARN  [instance] 'qwen3-coder' may fall back to CPU: 3 libraries not found
+                 (libamdhip64.so.7, librocblas.so.5, libhipblas.so.3) ...
+```
+
+Nothing is vendor-specific or version-specific: ROCm, CUDA, oneAPI/SYCL and OpenVINO are covered by
+the same mechanism, versioned and symlinked layouts (`/opt/rocm/lib` → `core-7.14`,
+`/usr/local/cuda-12.4`) are matched by glob, and a build linked against ROCm 7.2 happily uses a
+ROCm 7.14 install because only the SONAME major versions have to agree. Nothing is written outside
+`hemera.json` and no root is required.
+
+The Engines tab shows the result per installed binary. To cover an unusual location, add a glob to
+`librarySearchRoots` (global) or a directory to an engine's `libraryPaths` (highest priority), both
+editable under Settings; `libraryAutoDetect: false` turns the search off entirely.
 
 ## APIs
 
@@ -68,8 +96,11 @@ third-party assets, follows your OS light/dark theme, works on phone and desktop
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
 
 The ollama CLI works unchanged: `OLLAMA_HOST=host:12434 ollama list / ps / run / stop / rm`.
-`ollama rm` removes the configured model and deletes its file(s) only when no other configured
-model references them — files inside an ollama repository are never touched.
+Unlike upstream ollama, `ollama rm` (and **Remove** in the UI) only drops the configuration —
+model files are never deleted, since they are shared between configurations and expensive to
+re-obtain. Deleting a file is a separate, deliberate action in the Models tab that names every
+configured model it will take with it and asks you to type the filename to confirm. Files inside
+an ollama repository and files outside your configured model directories can never be deleted.
 
 Streaming, tool calling, and reasoning tokens translate across all three dialects, which is what
 lets Claude Code drive a local GGUF through `/v1/messages`. Vision and other multimodal input
@@ -87,12 +118,15 @@ Everything is one JSON document (`hemera.json`), editable in the UI or by hand:
   "keepAliveSeconds": 300,
   "loadTimeoutSeconds": 600,
   "modelDirs": ["/srv/models/gguf", "/usr/share/ollama/.ollama/models"],
+  "librarySearchRoots": [],         // extra globs for GPU runtimes; built-ins cover the usual paths
   "engines": {
     "llama.cpp": {
       "repo": "ggml-org/llama.cpp",
       "serverBin": "llama-server",
       "trackedVariants": ["ubuntu-rocm", "ubuntu-vulkan-x64"],
       "defaultArgs": ["--no-webui"],
+      "libraryAutoDetect": true,    // find ROCm/CUDA/oneAPI/OpenVINO libs automatically
+      "libraryPaths": [],           // explicit dirs, prepended to the search
       "installed": [ /* managed by hemera; every version kept for rollback */ ]
     },
     "ds4": { "binaryPath": "/opt/ds4/ds4", "healthPath": "/health",
@@ -133,7 +167,8 @@ src/ing/aether/hemera/
   json/Json.java       hand-rolled JSON parser/writer
   http/Router.java     routing over com.sun.net.httpserver, virtual threads
   config/Config.java   hemera.json load/save
-  engine/              GitHub releases, tar/zip extraction, process supervision
+  engine/              GitHub releases, tar/zip extraction, ELF/library discovery,
+                       process supervision
   model/               directory scanning, GGUF metadata, safe deletion
   api/                 Ollama / OpenAI / Anthropic dialects, translation, proxying
   web/                 admin endpoints + embedded UI

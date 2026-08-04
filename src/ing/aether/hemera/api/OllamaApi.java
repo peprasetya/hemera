@@ -335,7 +335,11 @@ public final class OllamaApi
         "message", stopped ? "model '" + name + "' stopped" : "model '" + name + "' was not running"));
   }
 
-  /** ollama rm: remove the configured model; delete its files when nothing else uses them. */
+  /**
+   * ollama rm: removes the configured model only. Unlike upstream ollama this never
+   * deletes model files — they are shared, expensive to re-download, and often not
+   * hemera's to remove. Deleting a file is an explicit action in the web UI.
+   */
   private void delete(HttpExchange ex) throws Exception
   {
     Map<String, Object> body = Router.readJson(ex);
@@ -344,7 +348,7 @@ public final class OllamaApi
       throw new HttpError(400, "missing 'model'");
     if (cfg.findProxy(name) != null)
       throw new HttpError(400, "'" + name + "' is a proxy — remove it in the web UI (/configure/)");
-    Map<String, Object> result = registry.deleteModel(name, true);
+    Map<String, Object> result = registry.deleteModel(name);
     result.put("status", "success");
     Router.sendJson(ex, 200, result);
   }

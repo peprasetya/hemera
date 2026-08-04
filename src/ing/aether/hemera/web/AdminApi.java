@@ -17,6 +17,7 @@ import ing.aether.hemera.config.Config;
 import ing.aether.hemera.engine.EngineDownloader;
 import ing.aether.hemera.engine.Engines;
 import ing.aether.hemera.engine.Instance;
+import ing.aether.hemera.engine.LibraryResolver;
 import ing.aether.hemera.engine.InstanceManager;
 import ing.aether.hemera.http.HttpError;
 import ing.aether.hemera.http.Router;
@@ -46,9 +47,11 @@ public final class AdminApi
     router.add("POST", "/hemera/api/engines/install", this::install);
     router.add("GET", "/hemera/api/engines/progress", ex -> Router.sendJson(ex, 200, EngineDownloader.jobs()));
     router.add("GET", "/hemera/api/engines/usage", ex -> Router.sendJson(ex, 200, Engines.usage(cfg)));
+    router.add("GET", "/hemera/api/engines/libraries", this::libraries);
     router.add("DELETE", "/hemera/api/engines", this::removeEngine);
     router.add("POST", "/hemera/api/models", this::putModel);
     router.add("DELETE", "/hemera/api/models", this::deleteModel);
+    router.add("DELETE", "/hemera/api/files", this::deleteFile);
     router.add("POST", "/hemera/api/models/stop", this::stopModel);
     router.add("POST", "/hemera/api/loglevel", this::logLevel);
   }
@@ -79,6 +82,7 @@ public final class AdminApi
       throw new HttpError(400, "config must contain a numeric 'port'");
     cfg.replace(body);
     Log.setLevel(cfg.logLevel());
+    LibraryResolver.clearCache();
     Log.info("admin", "Configuration replaced via web UI");
     Router.sendJson(ex, 200, Json.map("status", "ok",
         "note", "port changes take effect after restart"));
@@ -121,6 +125,27 @@ public final class AdminApi
     Router.sendJson(ex, 200, Json.map("status", "started", "id", id));
   }
 
+  /** Per-installed-binary runtime library status: what it needs, what was found, what is missing. */
+  private void libraries(HttpExchange ex) throws Exception
+  {
+    Map<String, Object> out = Json.map();
+    for (String engine : cfg.engines().keySet())
+      for (Map<String, Object> inst : cfg.installed(engine))
+      {
+        String version = Json.str(inst, "version", "");
+        String variant = Json.str(inst, "variant", "");
+        Path binDir = cfg.resolve(Json.str(inst, "binDir", Json.str(inst, "path", "")));
+        LibraryResolver.Result r = LibraryResolver.resolve(cfg, engine, binDir);
+        out.put(engine + "/" + version + "/" + variant, Json.map(
+            "searchPaths", r.searchPaths().stream().map(Path::toString).toList(),
+            "resolved", r.resolved(),
+            "missing", r.missing(),
+            "neededCount", r.needed().size(),
+            "complete", r.complete()));
+      }
+    Router.sendJson(ex, 200, out);
+  }
+
   private void removeEngine(HttpExchange ex) throws Exception
   {
     String engine = Router.query(ex, "engine");
@@ -159,13 +184,22 @@ public final class AdminApi
     Router.sendJson(ex, 200, Json.map("status", "ok"));
   }
 
+  /** Config-only removal; files are never touched here. */
   private void deleteModel(HttpExchange ex) throws Exception
   {
     String name = Router.query(ex, "name");
     if (name == null)
       throw new HttpError(400, "required query param: name");
-    boolean deleteFiles = "true".equals(Router.query(ex, "deleteFiles"));
-    Router.sendJson(ex, 200, registry.deleteModel(name, deleteFiles));
+    Router.sendJson(ex, 200, registry.deleteModel(name));
+  }
+
+  /** Explicit file deletion: removes the file(s) and any configured models using them. */
+  private void deleteFile(HttpExchange ex) throws Exception
+  {
+    String path = Router.query(ex, "path");
+    if (path == null)
+      throw new HttpError(400, "required query param: path");
+    Router.sendJson(ex, 200, registry.deleteFile(path));
   }
 
   private void stopModel(HttpExchange ex) throws Exception

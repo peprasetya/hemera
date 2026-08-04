@@ -30,6 +30,7 @@ let STATUS = null;   // /status
 let SCAN = null;     // /scan result
 let USAGE = {};      // engine binary -> [model names]
 let RELEASES = {};   // engine -> releases list
+let LIBS = {};      // engine binary -> runtime library status
 let showAllAssets = false;
 
 function esc(s) {
@@ -167,7 +168,7 @@ async function renderModels() {
       <td class="small mono">${esc((m.args || []).join(" "))}</td>
       <td>
         <button class="btn xs" data-edit="${esc(m.name)}">Edit</button>
-        <button class="btn danger xs" data-del="${esc(m.name)}">Delete</button>
+        <button class="btn danger xs" data-del="${esc(m.name)}">Remove</button>
       </td>
     </tr>`).join("");
 
@@ -186,17 +187,25 @@ async function renderModels() {
       <td class="small">${humanSize(f.size)}</td>
       <td class="small muted">${esc(metaTxt)}</td>
       <td>${used || '<span class="muted small">unused</span>'}</td>
-      <td><button class="btn xs primary" data-cfg="${idx}">Configure</button></td>
+      <td class="nowrap">
+        <button class="btn xs primary" data-cfg="${idx}">Configure</button>
+        ${f.source === "ollama"
+          ? '<button class="btn danger xs" disabled title="managed by ollama — use ollama rm">Delete file</button>'
+          : `<button class="btn danger xs" data-delfile="${idx}">Delete file</button>`}
+      </td>
     </tr>`;
   }).join("");
 
   const companions = (SCAN.files || []).filter(f => f.role !== "model");
-  const compRows = companions.map(f => `
+  const compRows = companions.map((f, ci) => `
     <tr>
       <td class="mono small" title="${esc(f.path)}">${esc(f.name)}</td>
       <td><span class="badge warn">${esc(f.role)}</span></td>
       <td class="small">${humanSize(f.size)}</td>
       <td>${(f.usedBy || []).map(u => `<span class="badge ok">${esc(u)}</span>`).join("") || '<span class="muted small">unused</span>'}</td>
+      <td>${f.source === "ollama"
+        ? '<button class="btn danger xs" disabled title="managed by ollama">Delete file</button>'
+        : `<button class="btn danger xs" data-delcomp="${ci}">Delete file</button>`}</td>
     </tr>`).join("");
 
   el.innerHTML = `
@@ -211,7 +220,8 @@ async function renderModels() {
         ${cfgRows || '<tr><td colspan="5" class="muted">No models configured yet — pick a scanned file below.</td></tr>'}
       </table></div>
       <p class="small muted">One model file can be configured several times under different names
-      to vary parameters. Models are reachable via all three APIs by name.</p>
+      to vary parameters. Models are reachable via all three APIs by name.
+      <strong>Remove</strong> only deletes the configuration — the file on disk is kept.</p>
     </div>
     <div class="card">
       <div class="row spread">
@@ -219,12 +229,12 @@ async function renderModels() {
         <span class="small"><a href="https://ollama.com/search" target="_blank" rel="noopener">Browse ollama library &#8599;</a></span>
       </div>
       <div class="tablewrap"><table>
-        <tr><th>File</th><th>Size</th><th>Metadata</th><th>Used by</th><th></th></tr>
+        <tr><th>File</th><th>Size</th><th>Metadata</th><th>Used by</th><th>Actions</th></tr>
         ${scanRows || '<tr><td colspan="5" class="muted">Nothing found. Add model directories in the Directories tab.</td></tr>'}
       </table></div>
       ${companions.length ? `<h3 style="margin-top:14px">Companion files (mmproj / mtp)</h3>
       <div class="tablewrap"><table>
-        <tr><th>File</th><th>Type</th><th>Size</th><th>Used by</th></tr>${compRows}
+        <tr><th>File</th><th>Type</th><th>Size</th><th>Used by</th><th>Actions</th></tr>${compRows}
       </table></div>` : ""}
     </div>`;
 
@@ -234,7 +244,9 @@ async function renderModels() {
     const m = (CONFIG.models || []).find(x => x.name === b.dataset.edit);
     if (m) modelForm(m, null);
   });
-  $$("[data-del]", el).forEach(b => b.onclick = () => deleteModelDialog(b.dataset.del));
+  $$("[data-del]", el).forEach(b => b.onclick = () => removeModelDialog(b.dataset.del));
+  $$("[data-delfile]", el).forEach(b => b.onclick = () => deleteFileDialog(modelFiles[+b.dataset.delfile]));
+  $$("[data-delcomp]", el).forEach(b => b.onclick = () => deleteFileDialog(companions[+b.dataset.delcomp]));
 }
 
 function suggestArgs(meta) {
@@ -324,28 +336,53 @@ function modelForm(existing, scanFile) {
   };
 }
 
-function deleteModelDialog(name) {
+function removeModelDialog(name) {
   const m = (CONFIG.models || []).find(x => x.name === name);
-  const lastRef = m && m.file ? fileRefCount(m.file) <= 1 : false;
-  const inBlobs = m && m.file && m.file.includes("/blobs/");
   openModal(`
-    <h3>Delete model '${esc(name)}'</h3>
-    <p class="small">Removes the configured model (same as <span class="mono">ollama rm</span>).</p>
+    <h3>Remove model '${esc(name)}'</h3>
+    <p class="small">Removes the configuration entry only. <strong>The model file stays on disk</strong>
+    and can be configured again at any time.</p>
     ${m && m.file ? `<p class="small mono muted">${esc(m.file)}</p>` : ""}
-    ${inBlobs ? '<p class="small muted">File lives in an ollama repository — it will not be deleted from disk.</p>'
-      : lastRef ? `<label class="row" style="margin:8px 0"><input type="checkbox" id="dm-files" style="width:auto"> also delete the file(s) from disk (last reference)</label>`
-      : '<p class="small muted">The file is used by other configured models and will be kept on disk.</p>'}
     <div class="row" style="margin-top:14px">
-      <button class="btn danger" id="dm-ok">Delete</button>
+      <button class="btn danger" id="dm-ok">Remove configuration</button>
       <button class="btn" id="dm-cancel">Cancel</button>
     </div>`);
   $("#dm-cancel").onclick = closeModal;
   $("#dm-ok").onclick = async () => {
     try {
-      const delFiles = $("#dm-files") && $("#dm-files").checked;
-      const res = await DEL("/hemera/api/models?name=" + encodeURIComponent(name) + "&deleteFiles=" + !!delFiles);
+      await DEL("/hemera/api/models?name=" + encodeURIComponent(name));
       closeModal();
-      toast("Deleted '" + name + "'" + (res.deletedFiles && res.deletedFiles.length ? " + " + res.deletedFiles.length + " file(s)" : ""));
+      toast("Removed configuration for '" + name + "' (file kept)");
+      navigate();
+    } catch (e) { fail(e); }
+  };
+}
+
+function deleteFileDialog(file) {
+  const users = file.usedBy || [];
+  openModal(`
+    <h3>Delete file from disk</h3>
+    <p class="small mono">${esc(file.path)}</p>
+    <p class="small">This permanently deletes ${file.parts > 1 ? "all <strong>" + file.parts + " parts</strong> of this model" : "the file"}
+    (${humanSize(file.size)}) from disk. It cannot be undone — you would have to download the model again.</p>
+    ${users.length ? `<div class="card" style="border-color:var(--danger)">
+        <strong class="small">These ${users.length} configured model${users.length > 1 ? "s" : ""} will also be deleted:</strong>
+        <div style="margin-top:6px">${users.map(u => `<span class="badge danger">${esc(u)}</span>`).join("")}</div>
+      </div>` : '<p class="small muted">No configured model uses this file.</p>'}
+    <label>Type the file name to confirm: <span class="mono">${esc(file.name)}</span></label>
+    <input type="text" id="df-confirm" class="mono" autocomplete="off">
+    <div class="row" style="margin-top:14px">
+      <button class="btn danger" id="df-ok" disabled>Delete permanently</button>
+      <button class="btn" id="df-cancel">Cancel</button>
+    </div>`);
+  $("#df-cancel").onclick = closeModal;
+  $("#df-confirm").oninput = ev => { $("#df-ok").disabled = ev.target.value.trim() !== file.name; };
+  $("#df-ok").onclick = async () => {
+    try {
+      const res = await DEL("/hemera/api/files?path=" + encodeURIComponent(file.path));
+      closeModal();
+      toast("Deleted " + res.deletedFiles.length + " file(s)"
+        + (res.removedModels.length ? " and " + res.removedModels.length + " configured model(s)" : ""));
       navigate();
     } catch (e) { fail(e); }
   };
@@ -355,6 +392,7 @@ function deleteModelDialog(name) {
 
 async function renderEngines() {
   USAGE = await GET("/hemera/api/engines/usage");
+  LIBS = await GET("/hemera/api/engines/libraries").catch(() => ({}));
   const el = $("#sec-engines");
   const engines = CONFIG.engines || {};
 
@@ -363,11 +401,25 @@ async function renderEngines() {
     const rows = installed.map(i => {
       const key = name + "/" + i.version + "/" + i.variant;
       const used = USAGE[key] || [];
+      const lib = LIBS[key];
+      let libCell = '<span class="muted small">-</span>';
+      if (lib) {
+        if (lib.complete) {
+          const dirs = Object.values(lib.resolved || {});
+          const where = [...new Set(dirs)];
+          libCell = where.length
+            ? `<span class="badge ok" title="${esc(where.join("\n"))}">found: ${esc(where.map(basename).join(", "))}</span>`
+            : '<span class="badge ok">self-contained</span>';
+        } else {
+          libCell = `<span class="badge danger" title="${esc(lib.missing.join("\n"))}">missing ${lib.missing.length}</span>`;
+        }
+      }
       return `
       <tr>
         <td class="mono">${esc(i.version)}</td>
         <td class="mono small">${esc(i.variant)}</td>
         <td class="small muted">${esc((i.installedAt || "").slice(0, 10))}</td>
+        <td>${libCell}</td>
         <td>${used.map(u => `<span class="badge ok">${esc(u)}</span>`).join("") || '<span class="badge">unused</span>'}</td>
         <td><button class="btn danger xs" data-rm-engine="${esc(name)}" data-version="${esc(i.version)}"
              data-variant="${esc(i.variant)}" ${used.length ? "disabled title='in use'" : ""}>Remove</button></td>
@@ -380,11 +432,14 @@ async function renderEngines() {
         ${e.repo ? `<button class="btn xs primary" data-releases="${esc(name)}">Check releases</button>` : ""}
       </div>
       <div class="tablewrap"><table>
-        <tr><th>Version</th><th>Variant</th><th>Installed</th><th>Used by models</th><th></th></tr>
-        ${rows || '<tr><td colspan="5" class="muted">No binaries installed yet.</td></tr>'}
+        <tr><th>Version</th><th>Variant</th><th>Installed</th><th>Runtime libs</th><th>Used by models</th><th></th></tr>
+        ${rows || '<tr><td colspan="6" class="muted">No binaries installed yet.</td></tr>'}
       </table></div>
       <p class="small muted">Older versions are kept as rollback history — pin a model to a previous
-      version in its edit form if a new binary misbehaves.</p>
+      version in its edit form if a new binary misbehaves.
+      <strong>Runtime libs</strong> shows whether the GPU runtime this build needs (ROCm, CUDA, oneAPI…)
+      was found on this machine; if it says <em>missing</em>, the engine would silently fall back to CPU —
+      hover for the exact library names, and add its directory under Settings.</p>
       <div id="releases-${esc(name)}"></div>
     </div>`;
   }).join("");
@@ -615,6 +670,11 @@ function renderSettings() {
       <input type="text" class="mono" data-set-tracked="${esc(name)}" value="${esc((e.trackedVariants || []).join(", "))}">
       <label>Default arguments (prepended for every model on this engine)</label>
       <input type="text" class="mono" data-set-args="${esc(name)}" value="${esc((e.defaultArgs || []).join(" "))}">
+      <label>Extra library directories (comma separated; added to LD_LIBRARY_PATH, highest priority)</label>
+      <input type="text" class="mono" data-set-libs="${esc(name)}" value="${esc((e.libraryPaths || []).join(", "))}">
+      <label class="row" style="margin-top:10px"><input type="checkbox" style="width:auto"
+        data-set-autolib="${esc(name)}" ${e.libraryAutoDetect === false ? "" : "checked"}>
+        auto-detect runtime libraries (ROCm / CUDA / oneAPI / OpenVINO)</label>
       ${e.binaryPath !== undefined ? `<label>Manual binary path</label>
         <input type="text" class="mono" data-set-bin="${esc(name)}" value="${esc(e.binaryPath || "")}">` : ""}
     </div>`).join("");
@@ -633,6 +693,10 @@ function renderSettings() {
           <input type="number" id="set-keepalive" value="${CONFIG.keepAliveSeconds != null ? CONFIG.keepAliveSeconds : 300}"></div>
         <div><label>Model load timeout seconds</label>
           <input type="number" id="set-timeout" value="${CONFIG.loadTimeoutSeconds != null ? CONFIG.loadTimeoutSeconds : 600}"></div>
+        <div class="full"><label>Extra library search roots (comma separated; globs allowed, e.g. /opt/myrocm*/lib)</label>
+          <input type="text" id="set-libroots" class="mono" value="${esc((CONFIG.librarySearchRoots || []).join(", "))}">
+          <p class="small muted">Searched in addition to the built-in locations for ROCm, CUDA, oneAPI and
+          OpenVINO. Only needed when a runtime lives somewhere unusual.</p></div>
       </div>
     </div>
     ${engineBlocks}
@@ -648,6 +712,7 @@ function renderSettings() {
       CONFIG.port = parseInt($("#set-port").value, 10) || 12434;
       CONFIG.keepAliveSeconds = parseInt($("#set-keepalive").value, 10);
       CONFIG.loadTimeoutSeconds = parseInt($("#set-timeout").value, 10);
+      CONFIG.librarySearchRoots = $("#set-libroots").value.split(",").map(s => s.trim()).filter(Boolean);
       $$("[data-set-tracked]").forEach(i => {
         engines[i.dataset.setTracked].trackedVariants = i.value.split(",").map(s => s.trim()).filter(Boolean);
       });
@@ -656,6 +721,12 @@ function renderSettings() {
       });
       $$("[data-set-bin]").forEach(i => {
         engines[i.dataset.setBin].binaryPath = i.value.trim();
+      });
+      $$("[data-set-libs]").forEach(i => {
+        engines[i.dataset.setLibs].libraryPaths = i.value.split(",").map(s => s.trim()).filter(Boolean);
+      });
+      $$("[data-set-autolib]").forEach(i => {
+        engines[i.dataset.setAutolib].libraryAutoDetect = i.checked;
       });
       await PUT("/hemera/api/config", CONFIG);
       toast("Settings saved");
