@@ -139,3 +139,7 @@ src/ing/aether/hemera/
   web/                 admin endpoints + embedded UI
 resources/web/         index.html, app.css, app.js
 ```
+
+## License
+
+[MIT](LICENSE)
