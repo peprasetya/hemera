@@ -207,6 +207,13 @@ public final class InstanceManager
       ldPath.addAll(List.of(inherited.split(":")));
     env.put("LD_LIBRARY_PATH", String.join(":", ldPath));
 
+    // GPU backends split into their own directory (as Ollama's bundled fork does for
+    // ROCm/Vulkan/CUDA) aren't linked into the binary — ggml dlopen's them itself and needs
+    // an explicit file path, not just a search directory, or it silently stays on CPU.
+    if (!env.containsKey("GGML_BACKEND_PATH"))
+      findBackendPlugin(Json.strList(engineCfg, "libraryPaths"))
+          .ifPresent(p -> env.put("GGML_BACKEND_PATH", p.toString()));
+
     if (!libs.missing().isEmpty())
       Log.warn("instance", "'" + name + "' may fall back to CPU: " + libs.missing().size()
           + " shared librar" + (libs.missing().size() == 1 ? "y" : "ies") + " not found ("
@@ -256,6 +263,38 @@ public final class InstanceManager
     stopProcess(proc);
     throw new HttpError(500, "timeout waiting for '" + name + "' to become ready ("
         + timeoutMs / 1000 + "s; adjust loadTimeoutSeconds in hemera.json)");
+  }
+
+  /**
+   * Finds a ggml GPU backend plugin (libggml-hip.so, libggml-vulkan.so, ...) sitting directly
+   * in one of the engine's configured libraryPaths, in the order given so earlier entries win.
+   * libggml-base.so and the libggml-cpu-* variants are not backend plugins and are skipped.
+   */
+  private static java.util.Optional<Path> findBackendPlugin(List<String> libraryPaths)
+  {
+    for (String p : libraryPaths)
+    {
+      Path dir = Path.of(Config.expandUser(p));
+      if (!Files.isDirectory(dir))
+        continue;
+      try (var stream = Files.list(dir))
+      {
+        java.util.Optional<Path> found = stream
+            .filter(f -> {
+              String fn = f.getFileName().toString();
+              return fn.startsWith("libggml-") && fn.endsWith(".so")
+                  && !fn.startsWith("libggml-cpu") && !fn.equals("libggml-base.so");
+            })
+            .findFirst();
+        if (found.isPresent())
+          return found;
+      }
+      catch (IOException e)
+      {
+        Log.debug("instance", "could not scan " + dir + " for backend plugins: " + e);
+      }
+    }
+    return java.util.Optional.empty();
   }
 
   /**
