@@ -371,10 +371,21 @@ function modelForm(existing, scanFile) {
       <button class="btn" id="mf-cancel">Cancel</button>
     </div>`);
 
+  const versionSelect = $("#mf-version");
+  const variantList = $("#mf-variants");
   const syncEngineFields = () => {
     const sel = $("#mf-engine").value;
     const manual = !!(CONFIG.engines[sel] || {}).binaryPath;
     $$(".mf-managed").forEach(d => d.style.display = manual ? "none" : "");
+    // Version/variant options were only ever built for the model's original engine, so
+    // switching engines has to rebuild them for whichever one is now selected.
+    const curVersion = versionSelect.value;
+    const selInstalled = ((CONFIG.engines[sel] || {}).installed || []);
+    const selVersions = [...new Set(selInstalled.map(i => i.version))].sort().reverse();
+    const selVariants = [...new Set(selInstalled.map(i => i.variant))];
+    versionSelect.innerHTML = `<option value="latest">latest (follow updates)</option>` +
+      selVersions.map(v => `<option ${v === curVersion ? "selected" : ""}>${esc(v)}</option>`).join("");
+    variantList.innerHTML = selVariants.map(v => `<option>${esc(v)}</option>`).join("");
   };
   $("#mf-engine").onchange = syncEngineFields;
   syncEngineFields();
