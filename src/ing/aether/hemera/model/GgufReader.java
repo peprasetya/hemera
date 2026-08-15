@@ -97,6 +97,15 @@ public final class GgufReader
     Object ft = meta.get("general.file_type");
     if (ft instanceof Number n)
       meta.put("hemera.quant", quantName(n.intValue()));
+    // Some models carry their vision/audio tower inside the same GGUF instead of a separate
+    // projector file, so "no mmproj beside it" does not mean "text only".
+    for (String k : new java.util.ArrayList<>(meta.keySet()))
+    {
+      if (k.contains(".vision.") || k.endsWith(".vision"))
+        meta.put("hemera.vision", Boolean.TRUE);
+      else if (k.contains(".audio.") || k.endsWith(".audio"))
+        meta.put("hemera.audio", Boolean.TRUE);
+    }
     Object pc = meta.get("general.parameter_count");
     if (pc instanceof Number n)
       meta.put("hemera.params", humanParams(n.longValue()));

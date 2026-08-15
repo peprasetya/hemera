@@ -183,7 +183,9 @@ async function renderModels() {
       <td class="mono small" title="${esc(f.path)}">${esc(f.name)}
         ${f.source === "ollama" ? '<span class="badge">ollama repo</span>' : ""}
         ${f.mtpHint ? '<span class="badge warn">mtp</span>' : ""}
-        ${f.mmprojPath ? '<span class="badge ok" title="' + esc(f.mmprojPath) + '">+ vision</span>' : ""}
+        ${f.mmprojPath ? '<span class="badge ok" title="' + esc(f.mmprojPath) + '">+ vision (projector)</span>'
+          : (f.meta && f.meta["hemera.vision"]) ? '<span class="badge warn" title="vision tower is inside the model file; no separate projector exists">+ vision (embedded)</span>' : ""}
+        ${(f.meta && f.meta["hemera.audio"]) ? '<span class="badge warn">+ audio</span>' : ""}
         ${f.parts > 1 ? '<span class="badge">' + f.parts + " parts</span>" : ""}</td>
       <td class="small">${humanSize(f.size)}</td>
       <td class="small muted">${esc(metaTxt)}</td>
@@ -310,6 +312,11 @@ function modelForm(existing, scanFile) {
           </div>
           <input type="hidden" id="mf-mmproj" value="${esc(mmproj)}">
           <p class="small muted mono" style="word-break:break-all">${esc(mmproj)}</p>`
+        : (scanFile && scanFile.meta && scanFile.meta["hemera.vision"])
+        ? `<input type="hidden" id="mf-mmproj" value="">
+           <p class="small muted">This model's vision tower is <strong>embedded in the model file</strong> —
+           there is no separate projector to attach. Whether images work depends on the engine build
+           supporting this architecture; upstream llama.cpp may need a newer release than the one you pinned.</p>`
         : `<input type="hidden" id="mf-mmproj" value="">
            <p class="small muted">No projector found next to this model — it will run text-only.
            Projectors are paired from the model's own directory, so they are never mixed between models.</p>`}

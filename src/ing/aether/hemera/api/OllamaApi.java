@@ -162,8 +162,10 @@ public final class OllamaApi
       meta = GgufReader.read(Path.of(file));
     String arch = Json.str(meta, "hemera.arch", "unknown");
     List<Object> caps = new ArrayList<>(List.of("completion", "tools"));
-    if (!Json.str(m, "mmproj", "").isEmpty())
+    if (!Json.str(m, "mmproj", "").isEmpty() || Json.bool(meta, "hemera.vision", false))
       caps.add("vision");
+    if (Json.bool(meta, "hemera.audio", false))
+      caps.add("audio");
     Router.sendJson(ex, 200, Json.map(
         "modelfile", "# managed by hemera\n# file: " + file + "\n",
         "parameters", String.join(" ", Json.strList(m, "args")),
