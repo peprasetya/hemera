@@ -52,10 +52,14 @@ preferred OOM victims, so an oversized model costs you that model rather than ev
 Open `http://host:12434/` in a browser → redirected to `/configure/`. Vanilla HTML/CSS/JS, no
 third-party assets, follows your OS light/dark theme, works on phone and desktop.
 
-- **Dashboard** — running models with ports, PIDs, and stop buttons.
+- **Dashboard** — running models with ports, PIDs, and stop buttons, plus anything currently
+  loading and any load that failed.
 - **Models** — scanned GGUF files (multi-part grouped, vision projectors paired automatically,
   ollama repositories read natively) with per-file usage cross-reference; configure one file as
-  several named variants with different args, environment, and engine pins.
+  several named variants with different args, environment, and engine pins. **Load** starts a
+  model immediately instead of waiting for the first API request — useful for warming a large
+  model or for checking that a new configuration actually runs; the load happens in the
+  background and its progress, or its error, is reported as it goes.
 - **Engines** — installed versions/variants showing which models use each binary, whether the GPU
   runtime each build needs was actually found, a GitHub release browser filtered to your tracked
   variants, download progress, and the full rollback history. **Add engine** registers a binary you

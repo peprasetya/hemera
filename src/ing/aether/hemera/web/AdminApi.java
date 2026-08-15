@@ -52,6 +52,7 @@ public final class AdminApi
     router.add("POST", "/hemera/api/models", this::putModel);
     router.add("DELETE", "/hemera/api/models", this::deleteModel);
     router.add("DELETE", "/hemera/api/files", this::deleteFile);
+    router.add("POST", "/hemera/api/models/load", this::loadModel);
     router.add("POST", "/hemera/api/models/stop", this::stopModel);
     router.add("POST", "/hemera/api/loglevel", this::logLevel);
   }
@@ -66,9 +67,14 @@ public final class AdminApi
           "startedAt", Instant.ofEpochMilli(i.startedAt).toString(),
           "lastUsed", Instant.ofEpochMilli(i.lastUsed).toString(),
           "keepAliveSeconds", i.keepAliveSec));
+    List<Object> loading = new ArrayList<>();
+    for (InstanceManager.LoadState l : im.loadStates())
+      loading.add(Json.map("name", l.name(), "error", l.error(),
+          "elapsedSeconds", (System.currentTimeMillis() - l.startedAt()) / 1000));
     Router.sendJson(ex, 200, Json.map(
         "version", Hemera.VERSION,
         "home", cfg.home.toString(),
+        "loading", loading,
         "port", cfg.port(),
         "logLevel", Log.levelName(),
         "uptimeSeconds", (System.currentTimeMillis() - startedAt) / 1000,
@@ -220,12 +226,27 @@ public final class AdminApi
     Router.sendJson(ex, 200, registry.deleteFile(path));
   }
 
+  /** Start a model now rather than waiting for the first API request; returns immediately. */
+  private void loadModel(HttpExchange ex) throws Exception
+  {
+    Map<String, Object> body = Router.readJson(ex);
+    String name = Json.str(body, "name", null);
+    if (name == null)
+      throw new HttpError(400, "missing 'name'");
+    Map<String, Object> model = cfg.findModel(name);
+    if (model == null)
+      throw new HttpError(404, "model '" + name + "' not found");
+    im.loadAsync(model);
+    Router.sendJson(ex, 200, Json.map("status", "loading", "name", name));
+  }
+
   private void stopModel(HttpExchange ex) throws Exception
   {
     Map<String, Object> body = Router.readJson(ex);
     String name = Json.str(body, "name", null);
     if (name == null)
       throw new HttpError(400, "missing 'name'");
+    im.clearLoadState(name);
     Router.sendJson(ex, 200, Json.map("stopped", im.stop(name)));
   }
 

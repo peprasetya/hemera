@@ -105,6 +105,14 @@ async function refreshStatusChip() {
 async function renderDashboard() {
   STATUS = await GET("/hemera/api/status");
   const el = $("#sec-dashboard");
+  const loadRows = (STATUS.loading || []).map(l => `
+    <tr>
+      <td class="mono">${esc(l.name)}</td>
+      <td colspan="5" class="small ${l.error ? "" : "muted"}" ${l.error ? 'style="color:var(--danger)"' : ""}>
+        ${l.error ? "load failed: " + esc(l.error) : "loading… " + l.elapsedSeconds + "s"}</td>
+      <td>${l.error ? `<button class="btn xs" data-dismiss="${esc(l.name)}">Dismiss</button>`
+        : '<span class="badge warn">starting</span>'}</td>
+    </tr>`).join("");
   const rows = STATUS.instances.map(i => `
     <tr>
       <td class="mono">${esc(i.name)}</td>
@@ -124,7 +132,8 @@ async function renderDashboard() {
       </div>
       <div class="tablewrap"><table>
         <tr><th>Model</th><th>Engine binary</th><th>Port</th><th>PID</th><th>Started</th><th>Keep-alive</th><th></th></tr>
-        ${rows || '<tr><td colspan="7" class="muted">Nothing loaded. Models start on first API request.</td></tr>'}
+        ${loadRows}
+        ${rows || (loadRows ? "" : '<tr><td colspan="7" class="muted">Nothing loaded. Load a model from the Models tab, or it starts on the first API request.</td></tr>')}
       </table></div>
     </div>
     <div class="card small muted">
@@ -134,6 +143,11 @@ async function renderDashboard() {
       <span class="mono">/v1/messages</span> (claude)
     </div>`;
   $("#dash-refresh").onclick = () => renderDashboard().catch(fail);
+  $$("[data-dismiss]", el).forEach(b => b.onclick = async () => {
+    try { await POST("/hemera/api/models/stop", { name: b.dataset.dismiss }); renderDashboard(); }
+    catch (e) { fail(e); }
+  });
+  if ((STATUS.loading || []).some(l => !l.error)) pollLoading();
   $$("[data-stop]", el).forEach(b => b.onclick = async () => {
     try { await POST("/hemera/api/models/stop", { name: b.dataset.stop }); toast("Stopped " + b.dataset.stop); renderDashboard(); }
     catch (e) { fail(e); }
@@ -158,7 +172,10 @@ function fileRefCount(path) {
 
 async function renderModels() {
   SCAN = await GET("/hemera/api/scan");
+  STATUS = await GET("/hemera/api/status").catch(() => STATUS);
   const el = $("#sec-models");
+  const running = new Set((STATUS && STATUS.instances || []).map(i => i.name));
+  const loading = new Map(((STATUS && STATUS.loading) || []).map(l => [l.name, l]));
 
   const cfgRows = (CONFIG.models || []).map(m => `
     <tr>
@@ -166,7 +183,14 @@ async function renderModels() {
       <td class="small">${esc(modelBinaryDesc(m))}</td>
       <td class="small mono" title="${esc(m.file || "")}">${esc(basename(m.file))}${m.mmproj ? '<br><span class="badge">mmproj</span>' : ""}</td>
       <td class="small mono">${esc((m.args || []).join(" "))}</td>
-      <td>
+      <td class="nowrap">
+        ${running.has(m.name)
+          ? `<span class="badge ok">loaded</span><button class="btn xs" data-unload="${esc(m.name)}">Unload</button>`
+          : loading.has(m.name) && !loading.get(m.name).error
+          ? `<span class="badge warn">loading ${loading.get(m.name).elapsedSeconds}s</span>`
+          : `<button class="btn xs" data-load="${esc(m.name)}">Load</button>`}
+        ${loading.has(m.name) && loading.get(m.name).error
+          ? `<span class="badge danger" title="${esc(loading.get(m.name).error)}">failed</span>` : ""}
         <button class="btn xs" data-edit="${esc(m.name)}">Edit</button>
         <button class="btn danger xs" data-del="${esc(m.name)}">Remove</button>
       </td>
@@ -249,6 +273,18 @@ async function renderModels() {
     const m = (CONFIG.models || []).find(x => x.name === b.dataset.edit);
     if (m) modelForm(m, null);
   });
+  $$("[data-load]", el).forEach(b => b.onclick = async () => {
+    try {
+      await POST("/hemera/api/models/load", { name: b.dataset.load });
+      toast("Loading '" + b.dataset.load + "' — this can take a while for large models");
+      pollLoading();
+    } catch (e) { fail(e); }
+  });
+  $$("[data-unload]", el).forEach(b => b.onclick = async () => {
+    try { await POST("/hemera/api/models/stop", { name: b.dataset.unload }); toast("Unloaded"); navigate(); }
+    catch (e) { fail(e); }
+  });
+  if (loading.size) pollLoading();
   $$("[data-del]", el).forEach(b => b.onclick = () => removeModelDialog(b.dataset.del));
   $$("[data-delfile]", el).forEach(b => b.onclick = () => deleteFileDialog(modelFiles[+b.dataset.delfile]));
   $$("[data-delcomp]", el).forEach(b => b.onclick = () => deleteFileDialog(companions[+b.dataset.delcomp]));
@@ -421,6 +457,21 @@ function deleteFileDialog(file) {
       navigate();
     } catch (e) { fail(e); }
   };
+}
+
+let loadTimer = null;
+function pollLoading() {
+  clearTimeout(loadTimer);
+  loadTimer = setTimeout(async () => {
+    try {
+      const st = await GET("/hemera/api/status");
+      const active = (st.loading || []).filter(l => !l.error);
+      const sec = currentSection();
+      if (sec === "models") await renderModels();
+      else if (sec === "dashboard") await renderDashboard();
+      if (active.length) pollLoading();
+    } catch (e) { /* transient */ }
+  }, 2000);
 }
 
 // ---------------------------------------------------------------- engines

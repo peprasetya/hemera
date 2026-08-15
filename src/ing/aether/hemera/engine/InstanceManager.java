@@ -42,6 +42,58 @@ public final class InstanceManager
     Runtime.getRuntime().addShutdownHook(new Thread(this::stopAll));
   }
 
+  /** A load started from the UI: in progress while error is null, otherwise a failure to report. */
+  public record LoadState(String name, long startedAt, String error)
+  {
+    public boolean failed()
+    {
+      return error != null;
+    }
+  }
+
+  private final Map<String, LoadState> loads = new ConcurrentHashMap<>();
+
+  /**
+   * Start a model in the background and report progress through {@link #loadStates()}.
+   * Loading a large model takes minutes, far longer than a browser will wait on one request,
+   * so the UI polls instead of blocking.
+   */
+  public void loadAsync(Map<String, Object> model)
+  {
+    String name = Json.str(model, "name", null);
+    if (name == null)
+      throw new HttpError(400, "model has no name");
+    if (get(name) != null)
+      return; // already running
+    LoadState existing = loads.get(name);
+    if (existing != null && !existing.failed())
+      return; // already loading
+    loads.put(name, new LoadState(name, System.currentTimeMillis(), null));
+    Thread.ofVirtual().name("load-" + name).start(() -> {
+      long started = System.currentTimeMillis();
+      try
+      {
+        ensure(model);
+        loads.remove(name);
+      }
+      catch (Exception e)
+      {
+        Log.error("instance", "Loading '" + name + "' failed", e);
+        loads.put(name, new LoadState(name, started, String.valueOf(e.getMessage())));
+      }
+    });
+  }
+
+  public List<LoadState> loadStates()
+  {
+    return List.copyOf(loads.values());
+  }
+
+  public void clearLoadState(String name)
+  {
+    loads.remove(name);
+  }
+
   /** Ensure the model's engine process is running and warm; returns the instance. */
   public Instance ensure(Map<String, Object> model) throws Exception
   {
@@ -63,6 +115,7 @@ public final class InstanceManager
       }
       Instance started = start(model);
       instances.put(name, started);
+      loads.remove(name);
       return started;
     }
   }
