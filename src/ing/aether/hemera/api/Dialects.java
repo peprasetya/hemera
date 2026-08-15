@@ -45,13 +45,7 @@ public final class Dialects
       Map<String, Object> m = Json.map("role", role);
       if (!images.isEmpty())
       {
-        List<Object> parts = new ArrayList<>();
-        if (!content.isEmpty())
-          parts.add(Json.map("type", "text", "text", content));
-        for (Object img : images)
-          parts.add(Json.map("type", "image_url",
-              "image_url", Json.map("url", "data:image/jpeg;base64," + img)));
-        m.put("content", parts);
+        m.put("content", mediaParts(content, images));
       }
       else
         m.put("content", content);
@@ -99,15 +93,9 @@ public final class Dialects
     String prompt = Json.str(body, "prompt", "");
     if (!images.isEmpty())
     {
-      // /v1/completions is plain-text only; an image-bearing generate has to go through
+      // /v1/completions is plain-text only; a media-bearing generate has to go through
       // the chat-completions endpoint instead, same as /api/chat does.
-      List<Object> parts = new ArrayList<>();
-      if (!prompt.isEmpty())
-        parts.add(Json.map("type", "text", "text", prompt));
-      for (Object img : images)
-        parts.add(Json.map("type", "image_url",
-            "image_url", Json.map("url", "data:image/jpeg;base64," + img)));
-      out.put("messages", List.of(Json.map("role", "user", "content", parts)));
+      out.put("messages", List.of(Json.map("role", "user", "content", mediaParts(prompt, images))));
     }
     else
       out.put("prompt", prompt);
@@ -123,6 +111,57 @@ public final class Dialects
     if (options.get("stop") != null)
       out.put("stop", options.get("stop"));
     return out;
+  }
+
+  // Ollama's "images" field carries any attachment blob, not just images — its own runner
+  // sniffs the bytes to route audio to the audio tower instead of the vision tower, so we
+  // do the same rather than trusting the field name.
+  private static List<Object> mediaParts(String text, List<Object> media)
+  {
+    List<Object> parts = new ArrayList<>();
+    if (!text.isEmpty())
+      parts.add(Json.map("type", "text", "text", text));
+    for (Object item : media)
+    {
+      String b64 = String.valueOf(item);
+      String audioFormat = sniffAudioFormat(b64);
+      if (audioFormat != null)
+        parts.add(Json.map("type", "input_audio",
+            "input_audio", Json.map("data", b64, "format", audioFormat)));
+      else
+        parts.add(Json.map("type", "image_url",
+            "image_url", Json.map("url", "data:image/jpeg;base64," + b64)));
+    }
+    return parts;
+  }
+
+  // Decodes only the leading bytes of the base64 blob (cheap) and checks magic numbers.
+  // Returns null for anything that isn't recognized audio, so it falls back to image handling.
+  private static String sniffAudioFormat(String b64)
+  {
+    try
+    {
+      int len = Math.min(b64.length() - (b64.length() % 4), 32);
+      if (len < 12)
+        return null;
+      byte[] h = java.util.Base64.getDecoder().decode(b64.substring(0, len));
+      if (h.length >= 12 && h[0] == 'R' && h[1] == 'I' && h[2] == 'F' && h[3] == 'F'
+          && h[8] == 'W' && h[9] == 'A' && h[10] == 'V' && h[11] == 'E')
+        return "wav";
+      if (h.length >= 4 && h[0] == 'f' && h[1] == 'L' && h[2] == 'a' && h[3] == 'C')
+        return "flac";
+      if (h.length >= 4 && h[0] == 'O' && h[1] == 'g' && h[2] == 'g' && h[3] == 'S')
+        return "ogg";
+      if (h.length >= 3 && h[0] == 'I' && h[1] == 'D' && h[2] == '3')
+        return "mp3"; // ID3-tagged mp3
+      if (h.length >= 2 && (h[0] & 0xFF) == 0xFF && (h[1] & 0xE0) == 0xE0)
+        return "mp3"; // bare MPEG frame sync
+      return null;
+    }
+    catch (IllegalArgumentException e)
+    {
+      return null;
+    }
   }
 
   private static void copyOption(Map<String, Object> from, String key, Map<String, Object> to, String toKey)
