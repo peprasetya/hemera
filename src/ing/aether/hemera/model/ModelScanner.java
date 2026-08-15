@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -48,6 +49,7 @@ public final class ModelScanner
 
   private static void scanGgufTree(Path dir, String dirStr, List<Map<String, Object>> out)
   {
+    List<Map<String, Object>> found = new ArrayList<>();
     try (Stream<Path> walk = Files.walk(dir, 8))
     {
       List<Path> ggufs = walk.filter(Files::isRegularFile)
@@ -95,8 +97,10 @@ public final class ModelScanner
           Map<String, Object> meta = GgufReader.read(p);
           entry.put("meta", trimMeta(meta));
         }
-        out.add(entry);
+        found.add(entry);
       }
+      bindProjectors(found);
+      out.addAll(found);
     }
     catch (IOException e)
     {
@@ -155,7 +159,10 @@ public final class ModelScanner
               "role", "model",
               "source", "ollama");
           if (projectorBlob != null)
+          {
             entry.put("mmprojPath", projectorBlob);
+            entry.put("mmprojName", "projector (from ollama manifest)");
+          }
           entry.put("meta", trimMeta(GgufReader.read(Path.of(modelBlob))));
           out.add(entry);
         }
@@ -178,6 +185,66 @@ public final class ModelScanner
       return null;
     Path p = repo.resolve("blobs").resolve("sha256-" + digest.substring(7));
     return Files.isRegularFile(p) ? p : null;
+  }
+
+  /**
+   * Attach each model to the vision projector sitting beside it. A projector only ever
+   * belongs to the model it shipped with, so pairing is by directory rather than being
+   * left to the user: mixing a projector from one model into another produces garbage.
+   * When a directory holds several of each, they are matched on filename similarity.
+   */
+  private static void bindProjectors(List<Map<String, Object>> entries)
+  {
+    Map<String, List<Map<String, Object>>> byDir = new LinkedHashMap<>();
+    for (Map<String, Object> e : entries)
+      byDir.computeIfAbsent(parentOf(Json.str(e, "path", "")), k -> new ArrayList<>()).add(e);
+
+    for (List<Map<String, Object>> siblings : byDir.values())
+    {
+      List<Map<String, Object>> projectors = siblings.stream()
+          .filter(e -> "mmproj".equals(Json.str(e, "role", ""))).toList();
+      if (projectors.isEmpty())
+        continue;
+      for (Map<String, Object> model : siblings)
+      {
+        if (!"model".equals(Json.str(model, "role", "")))
+          continue;
+        Map<String, Object> best = projectors.size() == 1 ? projectors.get(0)
+            : bestMatch(Json.str(model, "name", ""), projectors);
+        model.put("mmprojPath", Json.str(best, "path", ""));
+        model.put("mmprojName", Json.str(best, "name", ""));
+        List<Object> bound = Json.arr(best.computeIfAbsent("boundTo", k -> new ArrayList<>()));
+        bound.add(Json.str(model, "name", ""));
+      }
+    }
+  }
+
+  /** Pick the projector whose filename shares the longest prefix with the model's. */
+  private static Map<String, Object> bestMatch(String modelName, List<Map<String, Object>> projectors)
+  {
+    Map<String, Object> best = projectors.get(0);
+    int bestScore = -1;
+    String needle = modelName.toLowerCase();
+    for (Map<String, Object> p : projectors)
+    {
+      String cand = Json.str(p, "name", "").toLowerCase().replace("mmproj", "").replace("-", "");
+      int score = 0;
+      String stem = needle.replace("-", "");
+      while (score < cand.length() && score < stem.length() && cand.charAt(score) == stem.charAt(score))
+        score++;
+      if (score > bestScore)
+      {
+        bestScore = score;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  private static String parentOf(String path)
+  {
+    Path p = Path.of(path).getParent();
+    return p == null ? "" : p.toString();
   }
 
   /** Keep only the compact, interesting metadata for API/UI responses. */

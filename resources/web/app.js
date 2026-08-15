@@ -183,6 +183,7 @@ async function renderModels() {
       <td class="mono small" title="${esc(f.path)}">${esc(f.name)}
         ${f.source === "ollama" ? '<span class="badge">ollama repo</span>' : ""}
         ${f.mtpHint ? '<span class="badge warn">mtp</span>' : ""}
+        ${f.mmprojPath ? '<span class="badge ok" title="' + esc(f.mmprojPath) + '">+ vision</span>' : ""}
         ${f.parts > 1 ? '<span class="badge">' + f.parts + " parts</span>" : ""}</td>
       <td class="small">${humanSize(f.size)}</td>
       <td class="small muted">${esc(metaTxt)}</td>
@@ -202,7 +203,9 @@ async function renderModels() {
       <td class="mono small" title="${esc(f.path)}">${esc(f.name)}</td>
       <td><span class="badge warn">${esc(f.role)}</span></td>
       <td class="small">${humanSize(f.size)}</td>
-      <td>${(f.usedBy || []).map(u => `<span class="badge ok">${esc(u)}</span>`).join("") || '<span class="muted small">unused</span>'}</td>
+      <td>${(f.boundTo || []).map(u => `<span class="badge">${esc(u)}</span>`).join("")
+        || (f.usedBy || []).map(u => `<span class="badge ok">${esc(u)}</span>`).join("")
+        || '<span class="muted small">unpaired</span>'}</td>
       <td>${f.source === "ollama"
         ? '<button class="btn danger xs" disabled title="managed by ollama">Delete file</button>'
         : `<button class="btn danger xs" data-delcomp="${ci}">Delete file</button>`}</td>
@@ -234,7 +237,7 @@ async function renderModels() {
       </table></div>
       ${companions.length ? `<h3 style="margin-top:14px">Companion files (mmproj / mtp)</h3>
       <div class="tablewrap"><table>
-        <tr><th>File</th><th>Type</th><th>Size</th><th>Used by</th><th>Actions</th></tr>${compRows}
+        <tr><th>File</th><th>Type</th><th>Size</th><th>Paired with</th><th>Actions</th></tr>${compRows}
       </table></div>` : ""}
     </div>`;
 
@@ -247,6 +250,11 @@ async function renderModels() {
   $$("[data-del]", el).forEach(b => b.onclick = () => removeModelDialog(b.dataset.del));
   $$("[data-delfile]", el).forEach(b => b.onclick = () => deleteFileDialog(modelFiles[+b.dataset.delfile]));
   $$("[data-delcomp]", el).forEach(b => b.onclick = () => deleteFileDialog(companions[+b.dataset.delcomp]));
+}
+
+function findDetectedMmproj(file) {
+  const hit = (SCAN && SCAN.files || []).find(f => f.path === file);
+  return hit ? (hit.mmprojPath || "") : "";
 }
 
 function suggestArgs(meta) {
@@ -267,12 +275,15 @@ function modelForm(existing, scanFile) {
   const variants = [...new Set(installed.map(i => i.variant))];
   const name = m.name || (scanFile ? (scanFile.source === "ollama" ? scanFile.name : suggestName(scanFile.name)) : "");
   const file = m.file || (scanFile ? scanFile.path : "");
-  const mmproj = m.mmproj || (scanFile && scanFile.mmprojPath ? scanFile.mmprojPath : "");
+  // A projector belongs to the model it shipped with, so it is detected from the model's own
+  // directory (or the ollama manifest) and attached automatically — never chosen from a list.
+  const detected = scanFile ? (scanFile.mmprojPath || "") : (existing ? findDetectedMmproj(m.file) : "");
+  const detectedName = scanFile ? (scanFile.mmprojName || basename(scanFile.mmprojPath))
+    : basename(detected);
+  const mmproj = m.mmproj || detected;
   const args = (m.args || []).join(" ") || (scanFile ? suggestArgs(scanFile.meta) : "");
   const envLines = Object.entries(m.env || {}).map(([k, v]) => k + "=" + v).join("\n");
   const extraLines = Object.entries(m.extraFiles || {}).map(([k, v]) => k + "=" + v).join("\n");
-  const mmprojOptions = (SCAN && SCAN.files || []).filter(f => f.role === "mmproj")
-    .map(f => `<option value="${esc(f.path)}" ${f.path === mmproj ? "selected" : ""}>${esc(f.name)}</option>`).join("");
 
   openModal(`
     <h3>${existing ? "Edit model" : "New model"}</h3>
@@ -281,19 +292,28 @@ function modelForm(existing, scanFile) {
         <input type="text" id="mf-name" value="${esc(name)}" ${existing ? "readonly" : ""}></div>
       <div><label>Engine</label>
         <select id="mf-engine">${engines.map(e => `<option ${e === engine ? "selected" : ""}>${esc(e)}</option>`).join("")}</select></div>
-      <div><label>Engine version</label>
+      <div class="mf-managed"><label>Engine version</label>
         <select id="mf-version">
           <option value="latest">latest (follow updates)</option>
           ${versions.map(v => `<option ${v === m.engineVersion ? "selected" : ""}>${esc(v)}</option>`).join("")}
         </select></div>
-      <div class="full"><label>Engine variant filter (substring, e.g. "rocm" or "vulkan"; empty = any)</label>
+      <div class="full mf-managed"><label>Engine variant filter (substring, e.g. "rocm" or "vulkan"; empty = any)</label>
         <input type="text" id="mf-variant" value="${esc(m.engineVariant || "")}" list="mf-variants">
         <datalist id="mf-variants">${variants.map(v => `<option>${esc(v)}</option>`).join("")}</datalist></div>
       <div class="full"><label>Model file (.gguf — first part for split models)</label>
         <input type="text" id="mf-file" class="mono" value="${esc(file)}"></div>
-      <div class="full"><label>mmproj file (optional, for vision/audio models)</label>
-        <input type="text" id="mf-mmproj" class="mono" value="${esc(mmproj)}" list="mf-mmprojs">
-        <datalist id="mf-mmprojs">${mmprojOptions}</datalist></div>
+      <div class="full"><label>Vision projector (mmproj)</label>
+        ${mmproj ? `<div class="row" style="gap:8px">
+            <input type="checkbox" id="mf-mmproj-on" checked style="width:auto">
+            <span class="small">attach <span class="mono">${esc(detectedName || basename(mmproj))}</span>
+            ${detected ? '<span class="badge ok">auto-detected</span>' : '<span class="badge">configured</span>'}</span>
+          </div>
+          <input type="hidden" id="mf-mmproj" value="${esc(mmproj)}">
+          <p class="small muted mono" style="word-break:break-all">${esc(mmproj)}</p>`
+        : `<input type="hidden" id="mf-mmproj" value="">
+           <p class="small muted">No projector found next to this model — it will run text-only.
+           Projectors are paired from the model's own directory, so they are never mixed between models.</p>`}
+      </div>
       <div class="full"><label>Extra files (one per line: flag=path, e.g. mtp=/path/mtp.gguf)</label>
         <textarea id="mf-extra" class="mono">${esc(extraLines)}</textarea></div>
       <div class="full"><label>Arguments for the engine (space separated)</label>
@@ -308,6 +328,14 @@ function modelForm(existing, scanFile) {
       <button class="btn" id="mf-cancel">Cancel</button>
     </div>`);
 
+  const syncEngineFields = () => {
+    const sel = $("#mf-engine").value;
+    const manual = !!(CONFIG.engines[sel] || {}).binaryPath;
+    $$(".mf-managed").forEach(d => d.style.display = manual ? "none" : "");
+  };
+  $("#mf-engine").onchange = syncEngineFields;
+  syncEngineFields();
+
   $("#mf-cancel").onclick = closeModal;
   $("#mf-save").onclick = async () => {
     try {
@@ -319,7 +347,7 @@ function modelForm(existing, scanFile) {
         engineVersion: $("#mf-version").value,
         engineVariant: $("#mf-variant").value.trim(),
         file: $("#mf-file").value.trim(),
-        mmproj: $("#mf-mmproj").value.trim(),
+        mmproj: ($("#mf-mmproj-on") && !$("#mf-mmproj-on").checked) ? "" : $("#mf-mmproj").value.trim(),
         extraFiles: parseKv($("#mf-extra").value),
         args: $("#mf-args").value.trim().split(/\s+/).filter(Boolean),
         env: parseKv($("#mf-env").value),
@@ -428,23 +456,52 @@ async function renderEngines() {
     return `
     <div class="card">
       <div class="row spread">
-        <h3>${esc(name)} <span class="muted small">${esc(e.repo || (e.binaryPath ? "manual: " + e.binaryPath : ""))}</span></h3>
-        ${e.repo ? `<button class="btn xs primary" data-releases="${esc(name)}">Check releases</button>` : ""}
+        <h3>${esc(name)} <span class="muted small">${esc(e.repo || (e.binaryPath ? "manual binary" : ""))}</span></h3>
+        <span>
+          ${e.repo ? `<button class="btn xs primary" data-releases="${esc(name)}">Check releases</button>` : ""}
+          ${e.binaryPath !== undefined ? `<button class="btn xs" data-editengine="${esc(name)}">Edit</button>
+            <button class="btn danger xs" data-delengine="${esc(name)}">Remove</button>` : ""}
+        </span>
       </div>
-      <div class="tablewrap"><table>
+      ${e.binaryPath !== undefined ? `<div class="small muted mono" style="word-break:break-all">${esc(e.binaryPath)}
+        ${e.healthPath ? " · health " + esc(e.healthPath) : ""}
+        ${(() => { const l = LIBS[name + "//"]; if (!l) return "";
+          return l.complete ? '<span class="badge ok">libraries ok</span>'
+            : '<span class="badge danger" title="' + esc(l.missing.join("\n")) + '">missing ' + l.missing.length + ' librar' + (l.missing.length === 1 ? "y" : "ies") + '</span>'; })()}</div>
+        <div class="small mono muted" style="margin-top:4px">${esc((e.defaultArgs || []).join(" "))}</div>` : ""}
+      ${e.repo ? `<div class="tablewrap"><table>
         <tr><th>Version</th><th>Variant</th><th>Installed</th><th>Runtime libs</th><th>Used by models</th><th></th></tr>
         ${rows || '<tr><td colspan="6" class="muted">No binaries installed yet.</td></tr>'}
-      </table></div>
-      <p class="small muted">Older versions are kept as rollback history — pin a model to a previous
+      </table></div>` : ""}
+      ${e.repo ? `<p class="small muted">Older versions are kept as rollback history — pin a model to a previous
       version in its edit form if a new binary misbehaves.
       <strong>Runtime libs</strong> shows whether the GPU runtime this build needs (ROCm, CUDA, oneAPI…)
       was found on this machine; if it says <em>missing</em>, the engine would silently fall back to CPU —
-      hover for the exact library names, and add its directory under Settings.</p>
+      hover for the exact library names, and add its directory under Settings.</p>` : ""}
       <div id="releases-${esc(name)}"></div>
     </div>`;
   }).join("");
 
-  el.innerHTML = `<h2>Engines</h2><div id="engine-progress"></div>${blocks}`;
+  el.innerHTML = `
+    <div class="row spread"><h2>Engines</h2>
+      <button class="btn xs primary" id="engine-new">Add engine</button></div>
+    <div id="engine-progress"></div>${blocks}
+    <div class="card small muted">
+      <strong>Managed engines</strong> (with a GitHub repo) are downloaded and version-managed by hemera.
+      <strong>Custom engines</strong> point at a binary you installed yourself — use
+      <span class="mono">{port}</span>, <span class="mono">{file}</span> and <span class="mono">{mmproj}</span>
+      in the arguments and hemera substitutes them when launching a model.
+    </div>`;
+  $("#engine-new").onclick = () => engineForm(null);
+  $$("[data-editengine]", el).forEach(b => b.onclick = () => engineForm(b.dataset.editengine));
+  $$("[data-delengine]", el).forEach(b => b.onclick = async () => {
+    const n = b.dataset.delengine;
+    const inUse = (CONFIG.models || []).filter(m => (m.engine || "llama.cpp") === n).map(m => m.name);
+    if (inUse.length) { toast("Engine is used by: " + inUse.join(", "), true); return; }
+    if (!confirm("Remove engine '" + n + "' from the configuration? The binary itself is not deleted.")) return;
+    delete CONFIG.engines[n];
+    try { await PUT("/hemera/api/config", CONFIG); toast("Engine removed"); navigate(); } catch (e) { fail(e); }
+  });
   $$("[data-releases]", el).forEach(b => b.onclick = () => loadReleases(b.dataset.releases).catch(fail));
   $$("[data-rm-engine]", el).forEach(b => b.onclick = async () => {
     if (!confirm("Remove " + b.dataset.rmEngine + " " + b.dataset.version + " " + b.dataset.variant + " from disk?")) return;
@@ -455,6 +512,72 @@ async function renderEngines() {
     } catch (e) { fail(e); }
   });
   renderProgress();
+}
+
+const ENGINE_PRESETS = {
+  ds4: {
+    binaryPath: "binary/ds4/ds4-server",
+    healthPath: "/v1/models",
+    defaultArgs: "--host 127.0.0.1 --port {port} -m {file}",
+    note: "DwarfStar serves OpenAI and Anthropic APIs itself. Add --rocm, --metal or --cpu to pin a backend."
+  },
+  custom: { binaryPath: "", healthPath: "/health", defaultArgs: "--host 127.0.0.1 --port {port} -m {file}", note: "" }
+};
+
+function engineForm(existingName) {
+  const e = existingName ? (CONFIG.engines[existingName] || {}) : {};
+  const preset = existingName ? null : "ds4";
+  const p = ENGINE_PRESETS[preset] || {};
+  openModal(`
+    <h3>${existingName ? "Edit engine '" + esc(existingName) + "'" : "Add custom engine"}</h3>
+    ${existingName ? "" : `<label>Start from</label>
+      <select id="ef-preset">
+        <option value="ds4">ds4 / DwarfStar</option>
+        <option value="custom">custom binary</option>
+      </select>`}
+    <div class="formgrid">
+      <div class="full"><label>Engine name (referenced by models)</label>
+        <input type="text" id="ef-name" value="${esc(existingName || "ds4")}" ${existingName ? "readonly" : ""}></div>
+      <div class="full"><label>Server binary path (relative to hemera home, or absolute)</label>
+        <input type="text" id="ef-bin" class="mono" value="${esc(e.binaryPath || p.binaryPath || "")}"></div>
+      <div><label>Health check path</label>
+        <input type="text" id="ef-health" class="mono" value="${esc(e.healthPath || p.healthPath || "/health")}"></div>
+      <div><label>Server binary name (for library detection)</label>
+        <input type="text" id="ef-serverbin" class="mono" value="${esc(e.serverBin || "")}" placeholder="optional"></div>
+      <div class="full"><label>Launch arguments — {port}, {file}, {mmproj} are substituted</label>
+        <textarea id="ef-args" class="mono">${esc((e.defaultArgs || []).join(" ") || p.defaultArgs || "")}</textarea></div>
+    </div>
+    <p class="small muted" id="ef-note">${esc(p.note || "")}</p>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary" id="ef-save">Save</button>
+      <button class="btn" id="ef-cancel">Cancel</button>
+    </div>`);
+  $("#ef-cancel").onclick = closeModal;
+  if ($("#ef-preset")) $("#ef-preset").onchange = ev => {
+    const q = ENGINE_PRESETS[ev.target.value] || {};
+    $("#ef-name").value = ev.target.value === "ds4" ? "ds4" : "";
+    $("#ef-bin").value = q.binaryPath || "";
+    $("#ef-health").value = q.healthPath || "/health";
+    $("#ef-args").value = q.defaultArgs || "";
+    $("#ef-note").textContent = q.note || "";
+  };
+  $("#ef-save").onclick = async () => {
+    const name = $("#ef-name").value.trim();
+    const bin = $("#ef-bin").value.trim();
+    if (!name || !bin) { toast("name and binary path are required", true); return; }
+    const entry = Object.assign({}, existingName ? e : {}, {
+      binaryPath: bin,
+      healthPath: $("#ef-health").value.trim() || "/health",
+      defaultArgs: $("#ef-args").value.trim().split(/\s+/).filter(Boolean)
+    });
+    const sb = $("#ef-serverbin").value.trim();
+    if (sb) entry.serverBin = sb;
+    if (entry.libraryAutoDetect === undefined) entry.libraryAutoDetect = true;
+    if (!entry.libraryPaths) entry.libraryPaths = [];
+    CONFIG.engines[name] = entry;
+    try { await PUT("/hemera/api/config", CONFIG); closeModal(); toast("Engine '" + name + "' saved"); navigate(); }
+    catch (err) { fail(err); }
+  };
 }
 
 async function loadReleases(engine) {

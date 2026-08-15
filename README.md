@@ -42,7 +42,10 @@ java -jar hemera.jar [--home <dir>] [--port 12434] [--log info|debug|trace]
 
 Data (config `hemera.json`, engine binaries under `binary/`) lives next to the jar by default;
 override with `--home` or `HEMERA_HOME`. For systemd, install [hemera.service](hemera.service) to
-`/etc/systemd/system/` — logs land in `journalctl -u hemera`.
+`/etc/systemd/system/` — logs land in `journalctl -u hemera`. That unit sets
+`OOMPolicy=continue`: engines are children of hemera and share its cgroup, so without it a model
+too large for RAM takes the whole gateway down with it. Hemera also marks engine processes as
+preferred OOM victims, so an oversized model costs you that model rather than every loaded model.
 
 ## Web UI
 
@@ -50,15 +53,42 @@ Open `http://host:12434/` in a browser → redirected to `/configure/`. Vanilla 
 third-party assets, follows your OS light/dark theme, works on phone and desktop.
 
 - **Dashboard** — running models with ports, PIDs, and stop buttons.
-- **Models** — scanned GGUF files (multi-part grouped, mmproj/mtp companions detected, ollama
-  repositories read natively) with per-file usage cross-reference; configure one file as several
-  named variants with different args, environment, and engine pins.
+- **Models** — scanned GGUF files (multi-part grouped, vision projectors paired automatically,
+  ollama repositories read natively) with per-file usage cross-reference; configure one file as
+  several named variants with different args, environment, and engine pins.
 - **Engines** — installed versions/variants showing which models use each binary, whether the GPU
   runtime each build needs was actually found, a GitHub release browser filtered to your tracked
-  variants, download progress, and the full rollback history.
+  variants, download progress, and the full rollback history. **Add engine** registers a binary you
+  installed yourself, such as ds4.
 - **Directories** — model search paths, including ollama repositories.
 - **Proxies** — external providers exposed as local model names.
 - **Settings** — port, log level, keep-alive, per-engine default arguments.
+
+## Vision projectors
+
+An `mmproj` projector only works with the model it shipped with — pairing one model's projector
+with another produces garbage output. So hemera pairs them for you rather than offering a list to
+choose from: a projector found in a model's own directory is attached to that model, and for
+ollama models the projector layer is read from the manifest. Configuring a model shows the
+detected projector with a checkbox to leave it off; there is no cross-directory picker.
+
+## Custom engines
+
+Engines with a `repo` are downloaded and version-managed by hemera. Engines with a `binaryPath`
+run a binary you installed yourself — **Add engine** in the Engines tab, with a preset for
+[ds4](https://github.com/antirez/ds4) (DwarfStar). Use `{port}`, `{file}` and `{mmproj}` in the
+arguments and hemera substitutes them at launch:
+
+```jsonc
+"ds4": {
+  "binaryPath": "binary/ds4/ds4-server",
+  "healthPath": "/v1/models",
+  "defaultArgs": ["--host", "127.0.0.1", "--port", "{port}", "-m", "{file}"]
+}
+```
+
+Runtime library detection applies to these too, so a self-installed engine gets the same
+ROCm/CUDA handling as a managed one.
 
 ## Finding GPU runtimes
 

@@ -163,6 +163,7 @@ public final class InstanceManager
     Log.debug("instance", "LD_LIBRARY_PATH=" + env.get("LD_LIBRARY_PATH"));
 
     Process proc = pb.start();
+    preferOomVictim(proc);
     long keepAlive = Json.num(model, "keepAliveSeconds", cfg.defaultKeepAlive());
     Instance instance = new Instance(name, proc, port, engineDesc, keepAlive);
     pumpOutput(instance);
@@ -197,6 +198,25 @@ public final class InstanceManager
     stopProcess(proc);
     throw new HttpError(500, "timeout waiting for '" + name + "' to become ready ("
         + timeoutMs / 1000 + "s; adjust loadTimeoutSeconds in hemera.json)");
+  }
+
+  /**
+   * Make the engine a more attractive target for the kernel's OOM killer than hemera itself.
+   * A model that does not fit should cost you that one model, not the gateway and every other
+   * model currently loaded. Raising one's own children's score never requires privileges.
+   */
+  private static void preferOomVictim(Process proc)
+  {
+    Path oomScore = Path.of("/proc/" + proc.pid() + "/oom_score_adj");
+    try
+    {
+      if (Files.isWritable(oomScore))
+        Files.writeString(oomScore, "500\n");
+    }
+    catch (IOException | RuntimeException e)
+    {
+      Log.debug("instance", "could not adjust oom_score_adj for pid " + proc.pid() + ": " + e);
+    }
   }
 
   private static String substitute(String arg, int port, String file, String mmproj)

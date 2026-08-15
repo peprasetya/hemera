@@ -130,6 +130,23 @@ public final class AdminApi
   {
     Map<String, Object> out = Json.map();
     for (String engine : cfg.engines().keySet())
+    {
+      // engines run from a manually installed binary have no version list of their own
+      if (Engines.isManualBinary(cfg, engine))
+      {
+        Path binDir = cfg.resolve(Json.str(cfg.engine(engine), "binaryPath", "")).getParent();
+        if (binDir != null)
+        {
+          LibraryResolver.Result r = LibraryResolver.resolve(cfg, engine, binDir);
+          out.put(engine + "//", Json.map(
+              "searchPaths", r.searchPaths().stream().map(Path::toString).toList(),
+              "resolved", r.resolved(),
+              "missing", r.missing(),
+              "neededCount", r.needed().size(),
+              "complete", r.complete()));
+        }
+        continue;
+      }
       for (Map<String, Object> inst : cfg.installed(engine))
       {
         String version = Json.str(inst, "version", "");
@@ -143,6 +160,7 @@ public final class AdminApi
             "neededCount", r.needed().size(),
             "complete", r.complete()));
       }
+    }
     Router.sendJson(ex, 200, out);
   }
 

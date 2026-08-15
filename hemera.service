@@ -13,6 +13,10 @@ ExecStart=/usr/bin/java -jar /opt/hemera/hemera.jar
 Restart=on-failure
 RestartSec=3
 SyslogIdentifier=hemera
+# Engines run as children of hemera, so they share this unit's cgroup. Without this,
+# a model too large for RAM gets OOM-killed and systemd stops the whole gateway with it;
+# hemera additionally marks engines as preferred OOM victims so it survives to report the failure.
+OOMPolicy=continue
 # Uncomment to override the data directory:
 # Environment=HEMERA_HOME=/opt/hemera
 
