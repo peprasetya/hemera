@@ -95,7 +95,22 @@ public final class Dialects
   {
     Map<String, Object> out = Json.map();
     out.put("model", Json.str(body, "model", ""));
-    out.put("prompt", Json.str(body, "prompt", ""));
+    List<Object> images = Json.arr(body.get("images"));
+    String prompt = Json.str(body, "prompt", "");
+    if (!images.isEmpty())
+    {
+      // /v1/completions is plain-text only; an image-bearing generate has to go through
+      // the chat-completions endpoint instead, same as /api/chat does.
+      List<Object> parts = new ArrayList<>();
+      if (!prompt.isEmpty())
+        parts.add(Json.map("type", "text", "text", prompt));
+      for (Object img : images)
+        parts.add(Json.map("type", "image_url",
+            "image_url", Json.map("url", "data:image/jpeg;base64," + img)));
+      out.put("messages", List.of(Json.map("role", "user", "content", parts)));
+    }
+    else
+      out.put("prompt", prompt);
     boolean stream = Json.bool(body, "stream", true);
     out.put("stream", stream);
     if (stream)

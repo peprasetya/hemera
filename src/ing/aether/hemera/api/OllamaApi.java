@@ -272,7 +272,8 @@ public final class OllamaApi
 
     long startNs = System.nanoTime();
     Map<String, Object> oBody = Dialects.ollamaGenerateToOpenai(body);
-    String url = "http://127.0.0.1:" + inst.port + "/v1/completions";
+    boolean multimodal = oBody.containsKey("messages");
+    String url = "http://127.0.0.1:" + inst.port + (multimodal ? "/v1/chat/completions" : "/v1/completions");
     if (Json.bool(body, "stream", true))
     {
       OutputStream os = Router.startStream(ex, "application/x-ndjson");
