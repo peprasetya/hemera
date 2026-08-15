@@ -120,6 +120,13 @@ layout. Registering ollama's own `llama-server` as an engine runs those models, 
 Point `libraryPaths` at the backend subdirectory for your GPU (`rocm_v*`, `vulkan`, `cuda_v*`).
 For a model with an embedded tower, set both `file` and `mmproj` to the same path.
 
+Ollama's backends are plugins (`libggml-hip.so`, `libggml-vulkan.so`, ...) that ggml loads with
+`dlopen` at its own discretion rather than binaries linked at startup, so being on
+`LD_LIBRARY_PATH` is not enough to get one picked up — without more information the process
+loads fine and quietly runs on CPU. Hemera looks for a `libggml-<backend>.so` directly inside
+the configured `libraryPaths` (first match wins) and points `GGML_BACKEND_PATH` at it, the same
+way ollama's own launcher does.
+
 ## Finding GPU runtimes
 
 A llama.cpp ROCm or CUDA build needs vendor libraries that are usually *not* on the default loader
