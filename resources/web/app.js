@@ -528,6 +528,15 @@ const ENGINE_PRESETS = {
     defaultArgs: "--host 127.0.0.1 --port {port} -m {file}",
     note: "DwarfStar serves OpenAI and Anthropic APIs itself. Add --rocm, --metal or --cpu to pin a backend."
   },
+  "ollama-runner": {
+    binaryPath: "/usr/local/lib/ollama/llama-server",
+    healthPath: "/health",
+    defaultArgs: "--no-webui --offline -np 1",
+    libraryPaths: "/usr/local/lib/ollama, /usr/local/lib/ollama/rocm_v7_2",
+    note: "The llama.cpp fork bundled with ollama. Useful for models ollama can load but upstream " +
+          "llama.cpp cannot yet. -m and --mmproj are added automatically. Point libraryPaths at the " +
+          "backend subdirectory for your GPU (rocm_v*, vulkan, cuda_v*)."
+  },
   custom: { binaryPath: "", healthPath: "/health", defaultArgs: "--host 127.0.0.1 --port {port} -m {file}", note: "" }
 };
 
@@ -540,6 +549,7 @@ function engineForm(existingName) {
     ${existingName ? "" : `<label>Start from</label>
       <select id="ef-preset">
         <option value="ds4">ds4 / DwarfStar</option>
+        <option value="ollama-runner">ollama's bundled llama-server</option>
         <option value="custom">custom binary</option>
       </select>`}
     <div class="formgrid">
@@ -553,6 +563,8 @@ function engineForm(existingName) {
         <input type="text" id="ef-serverbin" class="mono" value="${esc(e.serverBin || "")}" placeholder="optional"></div>
       <div class="full"><label>Launch arguments — {port}, {file}, {mmproj} are substituted</label>
         <textarea id="ef-args" class="mono">${esc((e.defaultArgs || []).join(" ") || p.defaultArgs || "")}</textarea></div>
+      <div class="full"><label>Extra library directories (comma separated)</label>
+        <input type="text" id="ef-libs" class="mono" value="${esc((e.libraryPaths || []).join(", ") || p.libraryPaths || "")}"></div>
     </div>
     <p class="small muted" id="ef-note">${esc(p.note || "")}</p>
     <div class="row" style="margin-top:14px">
@@ -562,10 +574,11 @@ function engineForm(existingName) {
   $("#ef-cancel").onclick = closeModal;
   if ($("#ef-preset")) $("#ef-preset").onchange = ev => {
     const q = ENGINE_PRESETS[ev.target.value] || {};
-    $("#ef-name").value = ev.target.value === "ds4" ? "ds4" : "";
+    $("#ef-name").value = ev.target.value === "custom" ? "" : ev.target.value;
     $("#ef-bin").value = q.binaryPath || "";
     $("#ef-health").value = q.healthPath || "/health";
     $("#ef-args").value = q.defaultArgs || "";
+    $("#ef-libs").value = q.libraryPaths || "";
     $("#ef-note").textContent = q.note || "";
   };
   $("#ef-save").onclick = async () => {
@@ -580,7 +593,7 @@ function engineForm(existingName) {
     const sb = $("#ef-serverbin").value.trim();
     if (sb) entry.serverBin = sb;
     if (entry.libraryAutoDetect === undefined) entry.libraryAutoDetect = true;
-    if (!entry.libraryPaths) entry.libraryPaths = [];
+    entry.libraryPaths = $("#ef-libs").value.split(",").map(x => x.trim()).filter(Boolean);
     CONFIG.engines[name] = entry;
     try { await PUT("/hemera/api/config", CONFIG); closeModal(); toast("Engine '" + name + "' saved"); navigate(); }
     catch (err) { fail(err); }

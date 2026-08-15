@@ -99,7 +99,12 @@ public final class InstanceManager
 
     List<String> cmd = new ArrayList<>();
     cmd.add(bin);
-    boolean llamaStyle = "llama.cpp".equals(engineName);
+    // Anything that is a llama-server gets the -m/--mmproj treatment, including forks such as
+    // the one ollama bundles. Override with "argStyle": "llama" | "custom" on the engine.
+    String argStyle = Json.str(engineCfg, "argStyle", "");
+    boolean llamaStyle = argStyle.isEmpty()
+        ? Path.of(bin).getFileName().toString().contains("llama-server")
+        : "llama".equals(argStyle);
     if (llamaStyle)
     {
       cmd.add("--host");

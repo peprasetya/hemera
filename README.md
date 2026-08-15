@@ -72,6 +72,12 @@ choose from: a projector found in a model's own directory is attached to that mo
 ollama models the projector layer is read from the manifest. Configuring a model shows the
 detected projector with a checkbox to leave it off; there is no cross-directory picker.
 
+Some models have no separate projector because the vision (or audio) tower is embedded in the
+model file itself. Hemera detects that from the GGUF metadata and labels it, rather than implying
+the model is text-only. Whether images then work depends on the engine build: upstream llama.cpp
+rejects the combined file, while ollama's fork loads it when `file` and `mmproj` point at the same
+path — see Custom engines.
+
 ## Custom engines
 
 Engines with a `repo` are downloaded and version-managed by hemera. Engines with a `binaryPath`
@@ -88,7 +94,27 @@ arguments and hemera substitutes them at launch:
 ```
 
 Runtime library detection applies to these too, so a self-installed engine gets the same
-ROCm/CUDA handling as a managed one.
+ROCm/CUDA handling as a managed one. Any binary whose name contains `llama-server` is driven in
+llama.cpp style — `-m` and `--mmproj` are supplied automatically — which the `argStyle` key can
+override.
+
+That covers a useful case: **ollama's bundled fork**. Models pulled with `ollama pull` sometimes
+carry metadata upstream llama.cpp does not accept yet (`qwen3.5:9b` fails with
+`qwen35.rope.dimension_sections has wrong array length`), and models whose vision tower lives
+inside the model file rather than a separate projector need a runtime that understands that
+layout. Registering ollama's own `llama-server` as an engine runs those models, vision included:
+
+```jsonc
+"ollama-runner": {
+  "binaryPath": "/usr/local/lib/ollama/llama-server",
+  "healthPath": "/health",
+  "defaultArgs": ["--no-webui", "--offline", "-np", "1"],
+  "libraryPaths": ["/usr/local/lib/ollama", "/usr/local/lib/ollama/rocm_v7_2"]
+}
+```
+
+Point `libraryPaths` at the backend subdirectory for your GPU (`rocm_v*`, `vulkan`, `cuda_v*`).
+For a model with an embedded tower, set both `file` and `mmproj` to the same path.
 
 ## Finding GPU runtimes
 
