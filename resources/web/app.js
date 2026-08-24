@@ -210,6 +210,7 @@ async function renderModels() {
         ${f.mmprojPath ? '<span class="badge ok" title="' + esc(f.mmprojPath) + '">+ vision (projector)</span>'
           : (f.meta && f.meta["hemera.vision"]) ? '<span class="badge warn" title="vision tower is inside the model file; no separate projector exists">+ vision (embedded)</span>' : ""}
         ${(f.meta && f.meta["hemera.audio"]) ? '<span class="badge warn">+ audio</span>' : ""}
+        ${(f.meta && f.meta["hemera.embedding"]) ? '<span class="badge" title="needs --embedding to serve /api/embed correctly">embedding</span>' : ""}
         ${f.parts > 1 ? '<span class="badge">' + f.parts + " parts</span>" : ""}</td>
       <td class="small">${humanSize(f.size)}</td>
       <td class="small muted">${esc(metaTxt)}</td>
@@ -297,7 +298,9 @@ function findDetectedMmproj(file) {
 
 function suggestArgs(meta) {
   const ctx = meta && meta["hemera.context"] ? Math.min(meta["hemera.context"], 32768) : 8192;
-  return "-c " + ctx + " -ngl 99 --jinja";
+  // -ngl and --jinja are common to nearly every model, so they belong on the engine's own
+  // defaultArgs (Settings tab) instead of being repeated into every model's config here.
+  return "-c " + ctx + (meta && meta["hemera.embedding"] ? " --embedding" : "");
 }
 function suggestName(fname) {
   return String(fname || "").replace(/\.gguf$/i, "").replace(/-\d{5}-of-\d{5}$/, "")

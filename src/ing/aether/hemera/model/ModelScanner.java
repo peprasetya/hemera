@@ -252,7 +252,7 @@ public final class ModelScanner
   {
     Map<String, Object> t = Json.map();
     for (String k : new String[] { "hemera.arch", "hemera.name", "hemera.quant", "hemera.params",
-        "hemera.context", "hemera.vision", "hemera.audio",
+        "hemera.context", "hemera.vision", "hemera.audio", "hemera.embedding",
         "general.architecture", "general.name", "general.size_label", "error" })
       if (meta.containsKey(k))
         t.put(k, meta.get(k));

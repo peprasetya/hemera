@@ -105,7 +105,14 @@ public final class GgufReader
         meta.put("hemera.vision", Boolean.TRUE);
       else if (k.contains(".audio.") || k.endsWith(".audio"))
         meta.put("hemera.audio", Boolean.TRUE);
+      else if (k.endsWith(".pooling_type"))
+        meta.put("hemera.embedding", Boolean.TRUE);
     }
+    // A pooling type is the reliable signal, but some embedding conversions omit it —
+    // fall back to the model's own declared name.
+    if (!Boolean.TRUE.equals(meta.get("hemera.embedding")) && name instanceof String s2
+        && s2.toLowerCase(java.util.Locale.ROOT).contains("embed"))
+      meta.put("hemera.embedding", Boolean.TRUE);
     Object pc = meta.get("general.parameter_count");
     if (pc instanceof Number n)
       meta.put("hemera.params", humanParams(n.longValue()));

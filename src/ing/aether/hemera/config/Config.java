@@ -82,7 +82,7 @@ public final class Config
     e.put("serverBin", "llama-server");
     e.put("healthPath", "/health");
     e.put("trackedVariants", new ArrayList<>(List.of("ubuntu-vulkan-x64", "ubuntu-rocm")));
-    e.put("defaultArgs", new ArrayList<>(List.of("--no-webui")));
+    e.put("defaultArgs", new ArrayList<>(List.of("--no-webui", "-ngl", "99", "--jinja")));
     e.put("libraryAutoDetect", Boolean.TRUE);
     e.put("libraryPaths", new ArrayList<>());
     e.put("installed", new ArrayList<>());
