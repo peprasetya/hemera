@@ -207,8 +207,11 @@ Everything is one JSON document (`hemera.json`), editable in the UI or by hand:
       "engineVariant": "rocm",         // substring match against installed variants
       "file": "/models/Qwen3-Coder-Q4_K_M.gguf",
       "mmproj": "",                    // optional projector for vision/audio
-      "extraFiles": { "mtp": "/models/mtp.gguf" },   // extra flag=path pairs
-      "args": ["-c", "32768", "-ngl", "99", "--jinja"],
+      "extraFiles": { "model-draft": "/models/mtp-draft.gguf" },   // extra flag=path pairs
+      "args": ["-c", "32768", "-ngl", "99", "--jinja", "--spec-type", "draft-mtp", "--spec-draft-n-max", "3"],
+      // --spec-type draft-mtp is suggested whenever an MTP head is detected, whether it is
+      // baked into the model's own file ("mtp" in the filename, no much-smaller sibling) or
+      // lives in a separate draft gguf beside it (bound above as extraFiles.model-draft)
       "env": { "HSA_OVERRIDE_GFX_VERSION": "11.5.1" },
       "keepAliveSeconds": 300
     }

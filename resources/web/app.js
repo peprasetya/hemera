@@ -206,9 +206,10 @@ async function renderModels() {
     <tr>
       <td class="mono small" title="${esc(f.path)}">${esc(f.name)}
         ${f.source === "ollama" ? '<span class="badge">ollama repo</span>' : ""}
-        ${f.mtpHint ? '<span class="badge warn">mtp</span>' : ""}
         ${f.mmprojPath ? '<span class="badge ok" title="' + esc(f.mmprojPath) + '">+ vision (projector)</span>'
           : (f.meta && f.meta["hemera.vision"]) ? '<span class="badge warn" title="vision tower is inside the model file; no separate projector exists">+ vision (embedded)</span>' : ""}
+        ${f.mtpPath ? '<span class="badge ok" title="' + esc(f.mtpPath) + '">+ mtp draft (' + esc(basename(f.mtpPath)) + ')</span>'
+          : f.mtpEmbedded ? '<span class="badge ok" title="MTP head baked into this file — loaded with --spec-type draft-mtp, no companion needed">+ mtp (embedded)</span>' : ""}
         ${(f.meta && f.meta["hemera.audio"]) ? '<span class="badge warn">+ audio</span>' : ""}
         ${(f.meta && f.meta["hemera.embedding"]) ? '<span class="badge" title="needs --embedding to serve /api/embed correctly">embedding</span>' : ""}
         ${f.parts > 1 ? '<span class="badge">' + f.parts + " parts</span>" : ""}</td>
@@ -295,12 +296,22 @@ function findDetectedMmproj(file) {
   const hit = (SCAN && SCAN.files || []).find(f => f.path === file);
   return hit ? (hit.mmprojPath || "") : "";
 }
+function findDetectedMtp(file) {
+  const hit = (SCAN && SCAN.files || []).find(f => f.path === file);
+  return hit ? (hit.mtpPath || "") : "";
+}
 
-function suggestArgs(meta) {
-  const ctx = meta && meta["hemera.context"] ? Math.min(meta["hemera.context"], 32768) : 8192;
-  // -ngl and --jinja are common to nearly every model, so they belong on the engine's own
-  // defaultArgs (Settings tab) instead of being repeated into every model's config here.
-  return "-c " + ctx + (meta && meta["hemera.embedding"] ? " --embedding" : "");
+function suggestArgs(scanFile) {
+  const meta = (scanFile && scanFile.meta) || {};
+  // Follow the model's own trained context straight from its gguf metadata — no arbitrary cap.
+  const ctx = meta["hemera.context"] || 8192;
+  let extra = meta["hemera.embedding"] ? " --embedding" : "";
+  // --spec-type draft-mtp is needed whether the head is baked into this same file
+  // (mtpEmbedded) or lives in a separate draft gguf paired via --model-draft (mtpPath) —
+  // llama-server needs the flag either way to actually use the head for speculative decoding.
+  if (scanFile && (scanFile.mtpEmbedded || scanFile.mtpPath))
+    extra += " --spec-type draft-mtp --spec-draft-n-max 3";
+  return "-c " + ctx + extra;
 }
 function suggestName(fname) {
   return String(fname || "").replace(/\.gguf$/i, "").replace(/-\d{5}-of-\d{5}$/, "")
@@ -322,9 +333,17 @@ function modelForm(existing, scanFile) {
   const detectedName = scanFile ? (scanFile.mmprojName || basename(scanFile.mmprojPath))
     : basename(detected);
   const mmproj = m.mmproj || detected;
-  const args = (m.args || []).join(" ") || (scanFile ? suggestArgs(scanFile.meta) : "");
+  const args = (m.args || []).join(" ") || (scanFile ? suggestArgs(scanFile) : "");
   const envLines = Object.entries(m.env || {}).map(([k, v]) => k + "=" + v).join("\n");
-  const extraLines = Object.entries(m.extraFiles || {}).map(([k, v]) => k + "=" + v).join("\n");
+  // A separate MTP draft file is bound by directory the same way mmproj is (see
+  // ModelScanner.bindCompanions) — prefill it as --model-draft unless the user already set/cleared
+  // "model-draft" themselves. This is a genuinely separate small draft checkpoint, distinct from
+  // the "mtpEmbedded" case above where the head lives inside the main file itself.
+  const detectedMtp = scanFile ? (scanFile.mtpPath || "") : (existing ? findDetectedMtp(m.file) : "");
+  const extraFiles = { ...(m.extraFiles || {}) };
+  if (detectedMtp && !extraFiles["model-draft"])
+    extraFiles["model-draft"] = detectedMtp;
+  const extraLines = Object.entries(extraFiles).map(([k, v]) => k + "=" + v).join("\n");
 
   openModal(`
     <h3>${existing ? "Edit model" : "New model"}</h3>

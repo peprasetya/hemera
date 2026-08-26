@@ -79,8 +79,12 @@ public final class ModelScanner
           size = safeSize(p);
 
         String lower = fname.toLowerCase();
-        // only mmproj files are always companions; "mtp" in a name is just a hint —
-        // models with built-in MTP weights carry it in their filename too
+        // mmproj is always a companion. A file with "mtp" in its name is not: many releases
+        // bundle the MTP head straight into the one full checkpoint and just advertise that in
+        // the filename (used directly via --spec-type draft-mtp, no second file involved) — only
+        // a *much smaller* sibling model file in the same directory marks it as a genuine
+        // separate draft/head file, decided once every file's size is known (see
+        // reclassifyMtpCompanions below).
         String role = lower.contains("mmproj") ? "mmproj" : "model";
         Map<String, Object> entry = Json.map(
             "name", fname,
@@ -90,15 +94,16 @@ public final class ModelScanner
             "parts", parts,
             "role", role,
             "source", "scan");
-        if (lower.contains("mtp"))
-          entry.put("mtpHint", true);
         if ("model".equals(role))
         {
           Map<String, Object> meta = GgufReader.read(p);
           entry.put("meta", trimMeta(meta));
+          if (lower.contains("mtp"))
+            entry.put("mtpEmbedded", true);
         }
         found.add(entry);
       }
+      reclassifyMtpCompanions(found);
       bindProjectors(found);
       out.addAll(found);
     }
@@ -188,10 +193,38 @@ public final class ModelScanner
   }
 
   /**
-   * Attach each model to the vision projector sitting beside it. A projector only ever
-   * belongs to the model it shipped with, so pairing is by directory rather than being
-   * left to the user: mixing a projector from one model into another produces garbage.
-   * When a directory holds several of each, they are matched on filename similarity.
+   * A file named with "mtp" is only a separate draft/head companion when a clearly bigger
+   * sibling model sits in the same directory — otherwise it is a full model whose MTP head is
+   * baked into that same file (loaded with --spec-type draft-mtp, no companion needed at all).
+   */
+  private static void reclassifyMtpCompanions(List<Map<String, Object>> entries)
+  {
+    Map<String, List<Map<String, Object>>> byDir = new LinkedHashMap<>();
+    for (Map<String, Object> e : entries)
+      byDir.computeIfAbsent(parentOf(Json.str(e, "path", "")), k -> new ArrayList<>()).add(e);
+
+    for (List<Map<String, Object>> siblings : byDir.values())
+      for (Map<String, Object> e : siblings)
+      {
+        if (!"model".equals(Json.str(e, "role", "")) || !Boolean.TRUE.equals(e.get("mtpEmbedded")))
+          continue;
+        long size = Json.num(e, "size", 0);
+        boolean hasBiggerSibling = siblings.stream().anyMatch(o -> o != e
+            && "model".equals(Json.str(o, "role", "")) && Json.num(o, "size", 0) > size * 2);
+        if (hasBiggerSibling)
+        {
+          e.put("role", "mtp");
+          e.remove("meta");
+          e.remove("mtpEmbedded");
+        }
+      }
+  }
+
+  /**
+   * Attach each model to the companion files (vision projector, MTP head, ...) sitting beside
+   * it. A companion only ever belongs to the model it shipped with, so pairing is by directory
+   * rather than being left to the user: mixing one from another model produces garbage. When a
+   * directory holds several of the same kind, they are matched on filename similarity.
    */
   private static void bindProjectors(List<Map<String, Object>> entries)
   {
@@ -201,21 +234,28 @@ public final class ModelScanner
 
     for (List<Map<String, Object>> siblings : byDir.values())
     {
-      List<Map<String, Object>> projectors = siblings.stream()
-          .filter(e -> "mmproj".equals(Json.str(e, "role", ""))).toList();
-      if (projectors.isEmpty())
+      bindCompanions(siblings, "mmproj", "mmprojPath", "mmprojName");
+      bindCompanions(siblings, "mtp", "mtpPath", "mtpName");
+    }
+  }
+
+  private static void bindCompanions(List<Map<String, Object>> siblings, String role, String pathKey,
+      String nameKey)
+  {
+    List<Map<String, Object>> candidates = siblings.stream()
+        .filter(e -> role.equals(Json.str(e, "role", ""))).toList();
+    if (candidates.isEmpty())
+      return;
+    for (Map<String, Object> model : siblings)
+    {
+      if (!"model".equals(Json.str(model, "role", "")))
         continue;
-      for (Map<String, Object> model : siblings)
-      {
-        if (!"model".equals(Json.str(model, "role", "")))
-          continue;
-        Map<String, Object> best = projectors.size() == 1 ? projectors.get(0)
-            : bestMatch(Json.str(model, "name", ""), projectors);
-        model.put("mmprojPath", Json.str(best, "path", ""));
-        model.put("mmprojName", Json.str(best, "name", ""));
-        List<Object> bound = Json.arr(best.computeIfAbsent("boundTo", k -> new ArrayList<>()));
-        bound.add(Json.str(model, "name", ""));
-      }
+      Map<String, Object> best = candidates.size() == 1 ? candidates.get(0)
+          : bestMatch(Json.str(model, "name", ""), candidates);
+      model.put(pathKey, Json.str(best, "path", ""));
+      model.put(nameKey, Json.str(best, "name", ""));
+      List<Object> bound = Json.arr(best.computeIfAbsent("boundTo", k -> new ArrayList<>()));
+      bound.add(Json.str(model, "name", ""));
     }
   }
 
@@ -227,7 +267,8 @@ public final class ModelScanner
     String needle = modelName.toLowerCase();
     for (Map<String, Object> p : projectors)
     {
-      String cand = Json.str(p, "name", "").toLowerCase().replace("mmproj", "").replace("-", "");
+      String cand = Json.str(p, "name", "").toLowerCase()
+          .replace("mmproj", "").replace("mtp", "").replace("-", "");
       int score = 0;
       String stem = needle.replace("-", "");
       while (score < cand.length() && score < stem.length() && cand.charAt(score) == stem.charAt(score))
