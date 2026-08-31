@@ -9,7 +9,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/hemera
-ExecStart=/usr/bin/java -jar /opt/hemera/hemera.jar
+# -Djdk.lang.Process.launchMechanism=FORK: hemera spawns engine processes constantly (every
+# model load), and the JVM's default POSIX_SPAWN launch path on Linux has a known flaky failure
+# mode ("Failed to exec spawn helper", errno 0) under memory/process churn that has nothing to
+# do with the target binary. Classic fork()+exec() doesn't share that failure mode.
+ExecStart=/usr/bin/java -Djdk.lang.Process.launchMechanism=FORK -jar /opt/hemera/hemera.jar
 Restart=on-failure
 RestartSec=3
 SyslogIdentifier=hemera

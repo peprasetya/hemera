@@ -56,12 +56,34 @@ function toast(msg, isError) {
 }
 function fail(e) { toast(String(e.message || e), true); console.error(e); }
 
+let modalDirty = false;
 function openModal(html) {
   $("#modal-card").innerHTML = html;
   $("#modal").classList.remove("hidden");
+  $("#modal").scrollTop = 0;
+  modalDirty = false;
 }
-function closeModal() { $("#modal").classList.add("hidden"); }
-$("#modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
+function closeModal() { $("#modal").classList.add("hidden"); modalDirty = false; }
+function modalOpen() { return !$("#modal").classList.contains("hidden"); }
+
+// Tapping outside is a convenient dismiss for a read-only dialog, but on a phone the backdrop
+// is exactly where you tap to put the keyboard away — doing that silently threw away a
+// half-filled form. Once anything has been typed, only Save/Cancel closes the dialog.
+$("#modal-card").addEventListener("input", () => { modalDirty = true; });
+$("#modal").addEventListener("click", e => {
+  if (e.target.id === "modal" && !modalDirty) closeModal();
+});
+
+/**
+ * Swap a section's markup while keeping the page where the user had scrolled to.
+ * Background refreshes re-render whole sections, and on a phone that otherwise jumps
+ * the reader back to the top of a long table every couple of seconds.
+ */
+function paint(el, html) {
+  const y = window.scrollY;
+  el.innerHTML = html;
+  if (y) window.scrollTo(0, y);
+}
 
 // ---------------------------------------------------------------- navigation
 
@@ -86,7 +108,9 @@ async function navigate() {
     if (sec === "settings") renderSettings();
   } catch (e) { fail(e); }
 }
-window.addEventListener("hashchange", navigate);
+// paint() deliberately preserves scroll for background refreshes, so switching tabs has to
+// ask for the top of the page explicitly.
+window.addEventListener("hashchange", () => { window.scrollTo(0, 0); navigate(); });
 
 async function refreshStatusChip() {
   try {
@@ -107,33 +131,35 @@ async function renderDashboard() {
   const el = $("#sec-dashboard");
   const loadRows = (STATUS.loading || []).map(l => `
     <tr>
-      <td class="mono">${esc(l.name)}</td>
-      <td colspan="5" class="small ${l.error ? "" : "muted"}" ${l.error ? 'style="color:var(--danger)"' : ""}>
+      <td class="mono" data-label="Model">${esc(l.name)}</td>
+      <td colspan="5" class="small ${l.error ? "" : "muted"}" data-label="Status" ${l.error ? 'style="color:var(--danger)"' : ""}>
         ${l.error ? "load failed: " + esc(l.error) : "loading… " + l.elapsedSeconds + "s"}</td>
-      <td>${l.error ? `<button class="btn xs" data-dismiss="${esc(l.name)}">Dismiss</button>`
+      <td class="actions">${l.error ? `<button class="btn xs" data-dismiss="${esc(l.name)}">Dismiss</button>`
         : '<span class="badge warn">starting</span>'}</td>
     </tr>`).join("");
   const rows = STATUS.instances.map(i => `
     <tr>
-      <td class="mono">${esc(i.name)}</td>
-      <td>${esc(i.engine)}</td>
-      <td class="mono">${i.port}</td>
-      <td class="mono">${i.pid}</td>
-      <td class="small muted">${esc(i.startedAt.replace("T", " ").slice(0, 19))}</td>
-      <td class="small muted">${i.keepAliveSeconds < 0 ? "forever" : i.keepAliveSeconds + "s"}</td>
-      <td><button class="btn danger xs" data-stop="${esc(i.name)}">Stop</button></td>
+      <td class="mono" data-label="Model">${esc(i.name)}</td>
+      <td data-label="Engine binary">${esc(i.engine)}</td>
+      <td class="mono" data-label="Port">${i.port}</td>
+      <td class="mono" data-label="PID">${i.pid}</td>
+      <td class="small muted" data-label="Started">${esc(i.startedAt.replace("T", " ").slice(0, 19))}</td>
+      <td class="small muted" data-label="Keep-alive">${i.keepAliveSeconds < 0 ? "forever" : i.keepAliveSeconds + "s"}</td>
+      <td class="actions"><button class="btn danger xs" data-stop="${esc(i.name)}">Stop</button></td>
     </tr>`).join("");
-  el.innerHTML = `
+  paint(el, `
     <h2>Dashboard</h2>
     <div class="card">
       <div class="row spread">
         <h3>Running models</h3>
         <button class="btn xs" id="dash-refresh">Refresh</button>
       </div>
-      <div class="tablewrap"><table>
-        <tr><th>Model</th><th>Engine binary</th><th>Port</th><th>PID</th><th>Started</th><th>Keep-alive</th><th></th></tr>
+      <div class="tablewrap"><table class="stack">
+        <thead><tr><th>Model</th><th>Engine binary</th><th>Port</th><th>PID</th><th>Started</th><th>Keep-alive</th><th></th></tr></thead>
+        <tbody>
         ${loadRows}
         ${rows || (loadRows ? "" : '<tr><td colspan="7" class="muted">Nothing loaded. Load a model from the Models tab, or it starts on the first API request.</td></tr>')}
+        </tbody>
       </table></div>
     </div>
     <div class="card small muted">
@@ -141,7 +167,7 @@ async function renderDashboard() {
       · port ${STATUS.port} · uptime ${Math.floor(STATUS.uptimeSeconds / 60)} min
       · API endpoints: <span class="mono">/api/*</span> (ollama), <span class="mono">/v1/chat/completions</span> (openai),
       <span class="mono">/v1/messages</span> (claude)
-    </div>`;
+    </div>`);
   $("#dash-refresh").onclick = () => renderDashboard().catch(fail);
   $$("[data-dismiss]", el).forEach(b => b.onclick = async () => {
     try { await POST("/hemera/api/models/stop", { name: b.dataset.dismiss }); renderDashboard(); }
@@ -170,8 +196,8 @@ function fileRefCount(path) {
   return n;
 }
 
-async function renderModels() {
-  SCAN = await GET("/hemera/api/scan");
+async function renderModels(reuseScan) {
+  SCAN = (reuseScan && SCAN) ? SCAN : await GET("/hemera/api/scan");
   STATUS = await GET("/hemera/api/status").catch(() => STATUS);
   const el = $("#sec-models");
   const running = new Set((STATUS && STATUS.instances || []).map(i => i.name));
@@ -179,11 +205,11 @@ async function renderModels() {
 
   const cfgRows = (CONFIG.models || []).map(m => `
     <tr>
-      <td class="mono">${esc(m.name)}</td>
-      <td class="small">${esc(modelBinaryDesc(m))}</td>
-      <td class="small mono" title="${esc(m.file || "")}">${esc(basename(m.file))}${m.mmproj ? '<br><span class="badge">mmproj</span>' : ""}</td>
-      <td class="small mono">${esc((m.args || []).join(" "))}</td>
-      <td class="nowrap">
+      <td class="mono" data-label="Name">${esc(m.name)}</td>
+      <td class="small" data-label="Engine binary">${esc(modelBinaryDesc(m))}</td>
+      <td class="small mono" data-label="File" title="${esc(m.file || "")}">${esc(basename(m.file))}${m.mmproj ? '<br><span class="badge">mmproj</span>' : ""}</td>
+      <td class="small mono" data-label="Args">${esc((m.args || []).join(" "))}</td>
+      <td class="actions nowrap">
         ${running.has(m.name)
           ? `<span class="badge ok">loaded</span><button class="btn xs" data-unload="${esc(m.name)}">Unload</button>`
           : loading.has(m.name) && !loading.get(m.name).error
@@ -204,7 +230,7 @@ async function renderModels() {
       meta["hemera.context"] ? "ctx " + meta["hemera.context"] : null].filter(Boolean).join(" · ");
     return `
     <tr>
-      <td class="mono small" title="${esc(f.path)}">${esc(f.name)}
+      <td class="mono small" data-label="File" title="${esc(f.path)}">${esc(f.name)}
         ${f.source === "ollama" ? '<span class="badge">ollama repo</span>' : ""}
         ${f.mmprojPath ? '<span class="badge ok" title="' + esc(f.mmprojPath) + '">+ vision (projector)</span>'
           : (f.meta && f.meta["hemera.vision"]) ? '<span class="badge warn" title="vision tower is inside the model file; no separate projector exists">+ vision (embedded)</span>' : ""}
@@ -213,10 +239,10 @@ async function renderModels() {
         ${(f.meta && f.meta["hemera.audio"]) ? '<span class="badge warn">+ audio</span>' : ""}
         ${(f.meta && f.meta["hemera.embedding"]) ? '<span class="badge" title="needs --embedding to serve /api/embed correctly">embedding</span>' : ""}
         ${f.parts > 1 ? '<span class="badge">' + f.parts + " parts</span>" : ""}</td>
-      <td class="small">${humanSize(f.size)}</td>
-      <td class="small muted">${esc(metaTxt)}</td>
-      <td>${used || '<span class="muted small">unused</span>'}</td>
-      <td class="nowrap">
+      <td class="small" data-label="Size">${humanSize(f.size)}</td>
+      <td class="small muted" data-label="Metadata">${esc(metaTxt)}</td>
+      <td data-label="Used by">${used || '<span class="muted small">unused</span>'}</td>
+      <td class="actions nowrap">
         <button class="btn xs primary" data-cfg="${idx}">Configure</button>
         ${f.source === "ollama"
           ? '<button class="btn danger xs" disabled title="managed by ollama — use ollama rm">Delete file</button>'
@@ -228,27 +254,27 @@ async function renderModels() {
   const companions = (SCAN.files || []).filter(f => f.role !== "model");
   const compRows = companions.map((f, ci) => `
     <tr>
-      <td class="mono small" title="${esc(f.path)}">${esc(f.name)}</td>
-      <td><span class="badge warn">${esc(f.role)}</span></td>
-      <td class="small">${humanSize(f.size)}</td>
-      <td>${(f.boundTo || []).map(u => `<span class="badge">${esc(u)}</span>`).join("")
+      <td class="mono small" data-label="File" title="${esc(f.path)}">${esc(f.name)}</td>
+      <td data-label="Type"><span class="badge warn">${esc(f.role)}</span></td>
+      <td class="small" data-label="Size">${humanSize(f.size)}</td>
+      <td data-label="Paired with">${(f.boundTo || []).map(u => `<span class="badge">${esc(u)}</span>`).join("")
         || (f.usedBy || []).map(u => `<span class="badge ok">${esc(u)}</span>`).join("")
         || '<span class="muted small">unpaired</span>'}</td>
-      <td>${f.source === "ollama"
+      <td class="actions">${f.source === "ollama"
         ? '<button class="btn danger xs" disabled title="managed by ollama">Delete file</button>'
         : `<button class="btn danger xs" data-delcomp="${ci}">Delete file</button>`}</td>
     </tr>`).join("");
 
-  el.innerHTML = `
+  paint(el, `
     <h2>Models</h2>
     <div class="card">
       <div class="row spread">
         <h3>Configured models</h3>
         <button class="btn xs primary" id="model-new">New model</button>
       </div>
-      <div class="tablewrap"><table>
-        <tr><th>Name</th><th>Engine binary</th><th>File</th><th>Args</th><th></th></tr>
-        ${cfgRows || '<tr><td colspan="5" class="muted">No models configured yet — pick a scanned file below.</td></tr>'}
+      <div class="tablewrap"><table class="stack">
+        <thead><tr><th>Name</th><th>Engine binary</th><th>File</th><th>Args</th><th></th></tr></thead>
+        <tbody>${cfgRows || '<tr><td colspan="5" class="muted">No models configured yet — pick a scanned file below.</td></tr>'}</tbody>
       </table></div>
       <p class="small muted">One model file can be configured several times under different names
       to vary parameters. Models are reachable via all three APIs by name.
@@ -259,15 +285,16 @@ async function renderModels() {
         <h3>Scanned model files</h3>
         <span class="small"><a href="https://ollama.com/search" target="_blank" rel="noopener">Browse ollama library &#8599;</a></span>
       </div>
-      <div class="tablewrap"><table>
-        <tr><th>File</th><th>Size</th><th>Metadata</th><th>Used by</th><th>Actions</th></tr>
-        ${scanRows || '<tr><td colspan="5" class="muted">Nothing found. Add model directories in the Directories tab.</td></tr>'}
+      <div class="tablewrap"><table class="stack">
+        <thead><tr><th>File</th><th>Size</th><th>Metadata</th><th>Used by</th><th>Actions</th></tr></thead>
+        <tbody>${scanRows || '<tr><td colspan="5" class="muted">Nothing found. Add model directories in the Directories tab.</td></tr>'}</tbody>
       </table></div>
       ${companions.length ? `<h3 style="margin-top:14px">Companion files (mmproj / mtp)</h3>
-      <div class="tablewrap"><table>
-        <tr><th>File</th><th>Type</th><th>Size</th><th>Paired with</th><th>Actions</th></tr>${compRows}
+      <div class="tablewrap"><table class="stack">
+        <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Paired with</th><th>Actions</th></tr></thead>
+        <tbody>${compRows}</tbody>
       </table></div>` : ""}
-    </div>`;
+    </div>`);
 
   $("#model-new").onclick = () => modelForm(null, null);
   $$("[data-cfg]", el).forEach(b => b.onclick = () => modelForm(null, modelFiles[+b.dataset.cfg]));
@@ -388,7 +415,7 @@ function modelForm(existing, scanFile) {
       <div><label>Keep-alive seconds (-1 = never unload)</label>
         <input type="number" id="mf-keepalive" value="${m.keepAliveSeconds != null ? m.keepAliveSeconds : (CONFIG.keepAliveSeconds != null ? CONFIG.keepAliveSeconds : 300)}"></div>
     </div>
-    <div class="row" style="margin-top:16px">
+    <div class="row actions">
       <button class="btn primary" id="mf-save">Save</button>
       <button class="btn" id="mf-cancel">Cancel</button>
     </div>`);
@@ -499,9 +526,16 @@ function pollLoading() {
     try {
       const st = await GET("/hemera/api/status");
       const active = (st.loading || []).filter(l => !l.error);
-      const sec = currentSection();
-      if (sec === "models") await renderModels();
-      else if (sec === "dashboard") await renderDashboard();
+      // Re-rendering replaces the whole section. Doing that under an open dialog resets the
+      // form the user is filling in, so hold off until they are done — polling continues, the
+      // list just catches up when the dialog closes.
+      if (!modalOpen()) {
+        const sec = currentSection();
+        // The scan re-reads gguf headers off disk; far too heavy to repeat every 2s, and
+        // nothing it returns changes while a model is loading.
+        if (sec === "models") await renderModels(true);
+        else if (sec === "dashboard") await renderDashboard();
+      }
       if (active.length) pollLoading();
     } catch (e) { /* transient */ }
   }, 2000);
@@ -573,7 +607,7 @@ async function renderEngines() {
     </div>`;
   }).join("");
 
-  el.innerHTML = `
+  paint(el, `
     <div class="row spread"><h2>Engines</h2>
       <button class="btn xs primary" id="engine-new">Add engine</button></div>
     <div id="engine-progress"></div>${blocks}
@@ -582,7 +616,7 @@ async function renderEngines() {
       <strong>Custom engines</strong> point at a binary you installed yourself — use
       <span class="mono">{port}</span>, <span class="mono">{file}</span> and <span class="mono">{mmproj}</span>
       in the arguments and hemera substitutes them when launching a model.
-    </div>`;
+    </div>`);
   $("#engine-new").onclick = () => engineForm(null);
   $$("[data-editengine]", el).forEach(b => b.onclick = () => engineForm(b.dataset.editengine));
   $$("[data-delengine]", el).forEach(b => b.onclick = async () => {
@@ -766,7 +800,7 @@ function pollProgress() {
     // refresh installed table when a job finished
     const jobs = await GET("/hemera/api/engines/progress").catch(() => ({}));
     if (Object.values(jobs).every(j => j.status !== "downloading" && j.status !== "extracting" && j.status !== "starting")
-      && currentSection() === "engines") navigate();
+      && currentSection() === "engines" && !modalOpen()) navigate();
   }, 1500);
 }
 
@@ -775,7 +809,7 @@ function pollProgress() {
 function renderDirs() {
   const el = $("#sec-dirs");
   const dirs = CONFIG.modelDirs || [];
-  el.innerHTML = `
+  paint(el, `
     <h2>Model directories</h2>
     <div class="card">
       <div class="tablewrap"><table>
@@ -792,7 +826,7 @@ function renderDirs() {
       (multi-part models are grouped; mmproj/mtp companions detected).
       A directory containing <span class="mono">manifests/</span> + <span class="mono">blobs/</span>
       is read as an ollama repository — its models appear in the scan, and files inside it are never deleted by hemera.</p>
-    </div>`;
+    </div>`);
   $("#dir-add").onclick = async () => {
     const v = $("#dir-new").value.trim();
     if (!v) return;
@@ -810,7 +844,7 @@ function renderDirs() {
 function renderProxies() {
   const el = $("#sec-proxies");
   const proxies = CONFIG.proxies || [];
-  el.innerHTML = `
+  paint(el, `
     <h2>External model proxies</h2>
     <div class="card">
       <div class="row spread">
@@ -833,7 +867,7 @@ function renderProxies() {
       Gemini's OpenAI endpoint (<span class="mono">https://generativelanguage.googleapis.com/v1beta/openai</span>) and
       other OpenAI-compatible services. Type <b>anthropic</b> is the Claude API
       (<span class="mono">https://api.anthropic.com</span>).</p>
-    </div>`;
+    </div>`);
   $("#proxy-new").onclick = () => proxyForm(null);
   $$("[data-pedit]", el).forEach(b => b.onclick = () => proxyForm(proxies[+b.dataset.pedit]));
   $$("[data-pdel]", el).forEach(b => b.onclick = async () => {
@@ -906,7 +940,7 @@ function renderSettings() {
         <input type="text" class="mono" data-set-bin="${esc(name)}" value="${esc(e.binaryPath || "")}">` : ""}
     </div>`).join("");
 
-  el.innerHTML = `
+  paint(el, `
     <h2>Settings</h2>
     <div class="card">
       <div class="formgrid">
@@ -929,7 +963,7 @@ function renderSettings() {
     ${engineBlocks}
     <div class="row">
       <button class="btn primary" id="set-save">Save settings</button>
-    </div>`;
+    </div>`);
   $("#set-log").onchange = async ev => {
     try { await POST("/hemera/api/loglevel", { level: ev.target.value }); toast("Log level: " + ev.target.value); refreshStatusChip(); }
     catch (e) { fail(e); }
