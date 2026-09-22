@@ -18,6 +18,14 @@ async function api(method, path, body) {
   if (!resp.ok) throw new Error((data && data.error) || (method + " " + path + " -> " + resp.status));
   return data;
 }
+/** Multipart POST — the browser sets its own boundary, so no Content-Type here. */
+async function postForm(path, form) {
+  const resp = await fetch(path, { method: "POST", body: form });
+  let data = null;
+  try { data = await resp.json(); } catch (e) { /* empty body */ }
+  if (!resp.ok) throw new Error((data && data.error) || ("POST " + path + " -> " + resp.status));
+  return data;
+}
 const GET = p => api("GET", p);
 const POST = (p, b) => api("POST", p, b);
 const PUT = (p, b) => api("PUT", p, b);
@@ -87,7 +95,7 @@ function paint(el, html) {
 
 // ---------------------------------------------------------------- navigation
 
-const SECTIONS = ["dashboard", "models", "engines", "dirs", "proxies", "settings"];
+const SECTIONS = ["dashboard", "models", "engines", "images", "dirs", "proxies", "settings"];
 
 function currentSection() {
   const h = location.hash.replace("#", "");
@@ -104,6 +112,7 @@ async function navigate() {
     if (sec === "models") await renderModels();
     if (sec === "engines") await renderEngines();
     if (sec === "dirs") renderDirs();
+    if (sec === "images") renderImages();
     if (sec === "proxies") renderProxies();
     if (sec === "settings") renderSettings();
   } catch (e) { fail(e); }
@@ -884,6 +893,135 @@ function renderDirs() {
 }
 
 // ---------------------------------------------------------------- proxies
+
+// ---------------------------------------------------------------- images
+
+// Kept outside the render so switching tabs (or a background refresh) doesn't throw away a
+// result that took minutes to produce.
+let IMG_STATE = { results: [], busy: false };
+
+function renderImages() {
+  const el = $("#sec-images");
+  const models = (CONFIG.models || []).filter(m => isSdEngine(m.engine));
+  if (!models.length) {
+    paint(el, `<h2>Images</h2>
+      <div class="card"><p>No image models configured yet.</p>
+      <p class="small muted">Install the <strong>sd.cpp</strong> engine in the Engines tab, then pick a
+      diffusion model (badged <span class="badge warn">image</span>) in the Models tab. Its VAE and text
+      encoder are detected automatically.</p></div>`);
+    return;
+  }
+  const sel = IMG_STATE.model && models.some(m => m.name === IMG_STATE.model)
+    ? IMG_STATE.model : models[0].name;
+  const transparentCapable = (models.find(m => m.name === sel) || {}).transparentPrompt;
+
+  paint(el, `
+    <h2>Images</h2>
+    <div class="card">
+      <div class="formgrid">
+        <div class="full"><label>Prompt</label>
+          <textarea id="im-prompt" placeholder="a lovely cat holding a sign that says hemera">${esc(IMG_STATE.prompt || "")}</textarea></div>
+        <div><label>Model</label>
+          <select id="im-model">${models.map(m => `<option ${m.name === sel ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+        <div><label>Size (must divide by 32)</label>
+          <input type="text" id="im-size" class="mono" value="${esc(IMG_STATE.size || "1024x1024")}"></div>
+        <div><label>Steps</label>
+          <input type="number" id="im-steps" value="${esc(IMG_STATE.steps || 20)}"></div>
+        <div><label>Seed (-1 = random)</label>
+          <input type="number" id="im-seed" value="${esc(IMG_STATE.seed != null ? IMG_STATE.seed : -1)}"></div>
+        <div class="full"><label>Reference images — attach to edit instead of generate</label>
+          <input type="file" id="im-files" accept="image/*" multiple>
+          <p class="small muted">Several are allowed, and the prompt can refer to them in order
+          ("put the person from the first image next to the person from the second").</p>
+          <label class="row" style="margin:6px 0 0;gap:8px">
+            <input type="checkbox" id="im-keepsize" style="width:auto" ${IMG_STATE.keepSize ? "checked" : ""}>
+            <span class="small">Keep each reference's own framing — by default they are centre-cropped
+            to the output size, which cuts the edges off photos of a different shape (faces included)</span>
+          </label></div>
+        <div class="full"><label class="row" style="margin:0;gap:8px">
+          <input type="checkbox" id="im-transparent" style="width:auto" ${IMG_STATE.transparent ? "checked" : ""}
+            ${transparentCapable ? "" : "disabled"}>
+          <span>Transparent background${transparentCapable ? "" : " — needs a transparent-prompt template on this model"}</span>
+        </label></div>
+      </div>
+      <div class="row actions">
+        <button class="btn primary" id="im-go">${IMG_STATE.busy ? "Working…" : "Generate"}</button>
+        <span class="small muted" id="im-status"></span>
+      </div>
+    </div>
+    <div id="im-results"></div>`);
+
+  const filesInput = $("#im-files");
+  const go = $("#im-go");
+  const status = $("#im-status");
+
+  const label = () => go.textContent = filesInput.files.length
+    ? "Edit " + filesInput.files.length + " image" + (filesInput.files.length > 1 ? "s" : "") : "Generate";
+  filesInput.onchange = label;
+  label();
+  $("#im-model").onchange = ev => { IMG_STATE.model = ev.target.value; renderImages(); };
+
+  go.onclick = async () => {
+    if (IMG_STATE.busy) return;
+    const prompt = $("#im-prompt").value.trim();
+    if (!prompt) { toast("Enter a prompt first", true); return; }
+    IMG_STATE = { ...IMG_STATE, busy: true, prompt, model: $("#im-model").value,
+      size: $("#im-size").value.trim(), steps: +$("#im-steps").value, seed: +$("#im-seed").value,
+      transparent: $("#im-transparent").checked, keepSize: $("#im-keepsize").checked };
+    go.disabled = true;
+    const started = Date.now();
+    // Generation is slow enough that silence looks like a hang — count up while we wait.
+    const tick = setInterval(() => status.textContent =
+      "running " + Math.round((Date.now() - started) / 1000) + "s — the first request also loads the model",
+      500);
+    try {
+      const body = { model: IMG_STATE.model, prompt, size: IMG_STATE.size, steps: IMG_STATE.steps };
+      if (IMG_STATE.seed >= 0) body.seed = IMG_STATE.seed;
+      if (IMG_STATE.transparent) body.background = "transparent";
+      let data;
+      if (filesInput.files.length) {
+        const form = new FormData();
+        Object.entries(body).forEach(([k, v]) => form.append(k, v));
+        // Multipart fields are all text, so the native option rides along in the prompt's own
+        // escape hatch rather than as a form field.
+        if (IMG_STATE.keepSize)
+          form.set("prompt", prompt + ' <sd_cpp_extra_args>{"auto_resize_ref_image":false}</sd_cpp_extra_args>');
+        for (const f of filesInput.files) form.append("image[]", f, f.name);
+        data = await postForm("/v1/images/edits", form);
+      } else {
+        data = await POST("/v1/images/generations", body);
+      }
+      const secs = Math.round((Date.now() - started) / 1000);
+      IMG_STATE.results = (data.data || []).map(d => ({
+        src: "data:image/" + (data.output_format || "png") + ";base64," + d.b64_json,
+        prompt, secs, at: new Date().toLocaleTimeString()
+      })).concat(IMG_STATE.results).slice(0, 8);
+      status.textContent = "done in " + secs + "s";
+    } catch (e) {
+      status.textContent = "";
+      fail(e);
+    } finally {
+      clearInterval(tick);
+      IMG_STATE.busy = false;
+      go.disabled = false;
+      paintResults();
+    }
+  };
+  paintResults();
+}
+
+function paintResults() {
+  const holder = $("#im-results");
+  if (!holder) return;
+  holder.innerHTML = IMG_STATE.results.map((r, i) => `
+    <div class="card">
+      <img src="${r.src}" alt="${esc(r.prompt)}" style="max-width:100%;border-radius:8px;display:block">
+      <div class="row spread" style="margin-top:8px">
+        <span class="small muted">${esc(r.at)} · ${r.secs}s · ${esc(r.prompt).slice(0, 80)}</span>
+        <a class="btn xs" download="hemera-${i}.png" href="${r.src}">Download</a>
+      </div>
+    </div>`).join("");
+}
 
 function renderProxies() {
   const el = $("#sec-proxies");
