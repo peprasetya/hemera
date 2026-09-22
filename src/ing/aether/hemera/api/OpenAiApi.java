@@ -111,6 +111,7 @@ public final class OpenAiApi
     Map<String, Object> model = cfg.findModel(name);
     if (model == null)
       throw new HttpError(404, "model '" + raw + "' not found — configure it in the web UI (/configure/)");
+    ing.aether.hemera.engine.Engines.requireTextModel(cfg, model);
     return im.ensure(model);
   }
 }

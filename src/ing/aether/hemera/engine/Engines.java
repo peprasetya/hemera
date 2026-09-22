@@ -13,13 +13,19 @@ import ing.aether.hemera.json.Json;
 /** Resolves which installed binary a configured model uses, and the reverse cross-reference. */
 public final class Engines
 {
-  /** "b10254" -> 10254 for natural version ordering. */
+  private static final java.util.regex.Pattern FIRST_NUMBER = java.util.regex.Pattern.compile("\\d+");
+
+  /**
+   * "b10254" -> 10254, "master-897-ac45422" -> 897, for natural version ordering. Only the first
+   * run of digits counts: stable-diffusion.cpp tags end in a commit hash, whose digits would
+   * otherwise be glued on and make an older build sort as newer.
+   */
   public static long versionKey(String tag)
   {
-    String digits = tag == null ? "" : tag.replaceAll("\\D", "");
+    java.util.regex.Matcher m = FIRST_NUMBER.matcher(tag == null ? "" : tag);
     try
     {
-      return digits.isEmpty() ? 0 : Long.parseLong(digits);
+      return m.find() ? Long.parseLong(m.group()) : 0;
     }
     catch (NumberFormatException e)
     {
@@ -63,6 +69,50 @@ public final class Engines
   public static boolean isManualBinary(Config cfg, String engine)
   {
     return !Json.str(cfg.engine(engine), "binaryPath", "").isEmpty();
+  }
+
+  /**
+   * How hemera builds an engine's command line: "llama" (llama-server and forks: --host/--port,
+   * -m, --mmproj), "sd" (stable-diffusion.cpp's sd-server: --listen-ip/--listen-port,
+   * --diffusion-model, --vae, --llm, ...) or "custom" (only the configured args). An explicit
+   * "argStyle" on the engine wins; otherwise it is recognised from the server binary's name.
+   */
+  public static String argStyle(Config cfg, String engine)
+  {
+    Map<String, Object> e = cfg.engine(engine);
+    String explicit = Json.str(e, "argStyle", "");
+    if (!explicit.isEmpty())
+      return explicit;
+    String bin = isManualBinary(cfg, engine)
+        ? java.nio.file.Path.of(Json.str(e, "binaryPath", "")).getFileName().toString()
+        : Json.str(e, "serverBin", "llama-server");
+    if (bin.contains("sd-server"))
+      return "sd";
+    if (bin.contains("llama-server"))
+      return "llama";
+    return "custom";
+  }
+
+  /** An image model is one served by an sd.cpp-style engine. */
+  public static boolean isImageModel(Config cfg, Map<String, Object> model)
+  {
+    return "sd".equals(argStyle(cfg, Json.str(model, "engine", "llama.cpp")));
+  }
+
+  /** Refuse to route a chat/completion/embedding request to an image model with a useful message. */
+  public static void requireTextModel(Config cfg, Map<String, Object> model)
+  {
+    if (isImageModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is an image model — "
+          + "use POST /v1/images/generations or /v1/images/edits");
+  }
+
+  /** The reverse: the images endpoints only make sense against an sd.cpp-style engine. */
+  public static void requireImageModel(Config cfg, Map<String, Object> model)
+  {
+    if (!isImageModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is not an image model "
+          + "(its engine is not sd.cpp)");
   }
 
   /**

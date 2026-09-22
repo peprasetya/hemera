@@ -105,6 +105,9 @@ public final class ModelScanner
       }
       reclassifyMtpCompanions(found);
       bindProjectors(found);
+      for (Map<String, Object> e : found)
+        if (Json.obj(e.get("meta")).get("hemera.kind") instanceof String k && "image".equals(k))
+          bindImageComponents(e);
       out.addAll(found);
     }
     catch (IOException e)
@@ -190,6 +193,86 @@ public final class ModelScanner
       return null;
     Path p = repo.resolve("blobs").resolve("sha256-" + digest.substring(7));
     return Files.isRegularFile(p) ? p : null;
+  }
+
+  /** Weight files a diffusion pipeline is assembled from — not all of them are GGUF. */
+  private static final Pattern WEIGHT_FILE =
+      Pattern.compile(".*\\.(safetensors|sft|gguf|ckpt|pth)$", Pattern.CASE_INSENSITIVE);
+
+  /**
+   * A diffusion transformer is only half a pipeline: it also needs a VAE and a text encoder,
+   * which ship as separate files (usually in vae/ and text_encoders/ beside it) and are passed
+   * to sd-server as --vae / --llm. Collect the candidates per flag so the model form can offer
+   * them instead of making the user type four absolute paths.
+   *
+   * Only the model's own directory and its obvious component subdirectories are searched: a
+   * diffusion model sitting loose in a big shared model tree must not adopt its neighbours.
+   */
+  private static void bindImageComponents(Map<String, Object> model)
+  {
+    Path self = Path.of(Json.str(model, "path", ""));
+    Path dir = self.getParent();
+    if (dir == null)
+      return;
+    Map<String, Object> components = new LinkedHashMap<>();
+    List<Path> candidates = new ArrayList<>();
+    try (Stream<Path> top = Files.list(dir))
+    {
+      for (Path p : top.sorted().toList())
+      {
+        if (Files.isRegularFile(p))
+          candidates.add(p);
+        else if (Files.isDirectory(p) && COMPONENT_DIR.matcher(p.getFileName().toString()).matches())
+          try (Stream<Path> sub = Files.list(p))
+          {
+            sub.filter(Files::isRegularFile).sorted().forEach(candidates::add);
+          }
+      }
+    }
+    catch (IOException e)
+    {
+      Log.debug("scan", "could not scan components beside " + self + ": " + e);
+      return;
+    }
+    for (Path p : candidates)
+    {
+      if (p.equals(self) || !WEIGHT_FILE.matcher(p.getFileName().toString()).matches())
+        continue;
+      String flag = componentFlag(p);
+      if (flag == null)
+        continue;
+      @SuppressWarnings("unchecked")
+      List<Object> forFlag = (List<Object>) components.computeIfAbsent(flag, k -> new ArrayList<>());
+      forFlag.add(p.toAbsolutePath().toString());
+    }
+    if (!components.isEmpty())
+      model.put("imageComponents", components);
+  }
+
+  private static final Pattern COMPONENT_DIR = Pattern.compile(
+      "vae|text_encoders?|encoders?|clip|llm", Pattern.CASE_INSENSITIVE);
+
+  /** Which sd-server flag a component file belongs to, or null when it is not one. */
+  private static String componentFlag(Path p)
+  {
+    String name = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+    String parent = p.getParent() == null ? "" : p.getParent().getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+    if (name.contains("mmproj"))
+      return "llm_vision";
+    if (name.contains("vae") || parent.equals("vae"))
+      return "vae";
+    if (name.contains("clip_l"))
+      return "clip_l";
+    if (name.contains("clip_g"))
+      return "clip_g";
+    if (name.contains("t5"))
+      return "t5xxl";
+    if (name.contains("qwen2vl") || name.contains("qwen2.5vl"))
+      return "qwen2vl";
+    if (parent.startsWith("text_encoder") || parent.equals("encoders") || parent.equals("llm")
+        || name.contains("text_encoder"))
+      return "llm";
+    return null;
   }
 
   /**
@@ -293,7 +376,7 @@ public final class ModelScanner
   {
     Map<String, Object> t = Json.map();
     for (String k : new String[] { "hemera.arch", "hemera.name", "hemera.quant", "hemera.params",
-        "hemera.context", "hemera.vision", "hemera.audio", "hemera.embedding",
+        "hemera.context", "hemera.vision", "hemera.audio", "hemera.embedding", "hemera.kind",
         "general.architecture", "general.name", "general.size_label", "error" })
       if (meta.containsKey(k))
         t.put(k, meta.get(k));

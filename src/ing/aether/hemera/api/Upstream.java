@@ -69,6 +69,25 @@ public final class Upstream
     return Json.parseObj(resp.body());
   }
 
+  /** POST a pre-encoded body (e.g. multipart) and parse the JSON reply. Throws HttpError on non-2xx. */
+  public static Map<String, Object> postBytes(String url, byte[] body, String contentType)
+      throws IOException, InterruptedException
+  {
+    if (Log.traceOn())
+      Log.trace("upstream", "POST " + url + " (" + body.length + " bytes, " + contentType + ")");
+    HttpRequest req = HttpRequest.newBuilder()
+        .uri(URI.create(url))
+        .header("Content-Type", contentType)
+        .timeout(Duration.ofHours(1))
+        .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+        .build();
+    HttpResponse<String> resp = HC.send(req, HttpResponse.BodyHandlers.ofString());
+    if (resp.statusCode() / 100 != 2)
+      throw new HttpError(resp.statusCode() >= 500 ? 502 : resp.statusCode(),
+          "upstream " + url + " returned " + resp.statusCode() + ": " + abbrev(resp.body()));
+    return Json.parseObj(resp.body());
+  }
+
   /**
    * Read a server-sent-event stream and invoke consumer(eventName, data) per data line.
    * eventName is the most recent "event:" line (null for plain OpenAI-style streams).

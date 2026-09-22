@@ -159,7 +159,7 @@ editable under Settings; `libraryAutoDetect: false` turns the search off entirel
 | Dialect | Endpoints |
 |---|---|
 | Ollama | `/api/tags` `/api/ps` `/api/show` `/api/chat` `/api/generate` `/api/embed` `/api/delete` `/api/stop` `/api/version` |
-| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` |
+| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` |
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
 
 The ollama CLI works unchanged: `OLLAMA_HOST=host:12434 ollama list / ps / run / stop / rm`.
@@ -173,6 +173,54 @@ Streaming, tool calling, and reasoning tokens translate across all three dialect
 lets Claude Code drive a local GGUF through `/v1/messages`. Vision and other multimodal input
 follow the model's own capabilities: configure an `mmproj` file and send images the ollama or
 OpenAI way.
+
+## Image generation (stable-diffusion.cpp)
+
+The `sd.cpp` engine runs [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)'s
+`sd-server` and is managed exactly like llama.cpp — pick a release in the Engines tab. A diffusion
+model is recognised by its tensor names (these GGUFs often carry no metadata at all), and the VAE
+and text encoder sitting beside it in `vae/` and `text_encoders/` are offered automatically, so
+configuring one is a single click from the scan list.
+
+```bash
+curl http://host:12434/v1/images/generations -H 'Content-Type: application/json' -d '{
+  "model": "qwen-image-2.1", "prompt": "a lovely cat holding a sign that says hemera",
+  "size": "1024x1024", "steps": 20, "seed": 7 }'
+```
+
+The reply is OpenAI-shaped: `data[].b64_json`. Editing takes one or more reference images, as
+multipart (`image[]`, what the OpenAI SDKs send) or as JSON with base64/data-URL strings, which is
+easier to drive from `curl`:
+
+```bash
+curl http://host:12434/v1/images/edits -H 'Content-Type: application/json' -d '{
+  "model": "qwen-image-2.1", "prompt": "put the fox from the second image on the apple",
+  "images": ["'"$(base64 -w0 apple.png)"'", "'"$(base64 -w0 fox.png)"'"], "size": "768x512" }'
+```
+
+Beyond the OpenAI fields (`prompt`, `n`, `size`, `output_format`, `output_compression`), hemera
+accepts `steps`, `seed`, `cfg_scale`, `sampler`, `scheduler`, `negative_prompt` and `strength`,
+and folds them into stable-diffusion.cpp's own `<sd_cpp_extra_args>` block — which you can still
+write yourself for anything else in its
+[API](https://github.com/leejet/stable-diffusion.cpp/blob/master/examples/server/api.md), LoRAs
+and hires included.
+
+Two behaviours are hemera's own, because the underlying endpoint is surprising:
+
+- **Edits default to `strength: 1.0`.** `sd-server` makes the first upload an *init* image as well
+  as a reference, so at its own default an instruction like "put the fox on the apple" comes back
+  as a mild img2img redraw of the apple with the second image ignored. A full-strength denoise
+  leaves the uploads as pure conditioning, which is what instruction-edit models are trained for.
+  Pass `strength` yourself for classic img2img.
+- **`background: "transparent"` works through the prompt.** Models such as Qwen-Image 2.1 emit an
+  alpha channel because the prompt asked for it; there is no flag. Each model carries a
+  `transparentPrompt` template (pre-filled for Qwen-Image, `{prompt}` marks the insertion point),
+  and hemera wraps the request's text with it and forces a format that can hold alpha. Asking for
+  transparency with `output_format: "jpeg"`, or on a model with no template, is an error rather
+  than a silently opaque image.
+
+Image models are refused by the chat, completion and embedding endpoints with a message pointing
+at the right one, and vice versa.
 
 ## Configuration
 
@@ -196,6 +244,13 @@ Everything is one JSON document (`hemera.json`), editable in the UI or by hand:
       "libraryPaths": [],           // explicit dirs, prepended to the search
       "installed": [ /* managed by hemera; every version kept for rollback */ ]
     },
+    "sd.cpp": {
+      "repo": "leejet/stable-diffusion.cpp",
+      "serverBin": "sd-server",
+      "argStyle": "sd",             // --listen-ip/--listen-port, --diffusion-model, --vae, --llm
+      "healthPath": "/v1/models",   // sd-server has no /health, and only listens once loaded
+      "trackedVariants": ["x86_64-vulkan", "x86_64-rocm"]
+    },
     "ds4": { "binaryPath": "/opt/ds4/ds4", "healthPath": "/health",
              "defaultArgs": ["serve", "--port", "{port}", "--model", "{file}"] }
   },
@@ -214,6 +269,19 @@ Everything is one JSON document (`hemera.json`), editable in the UI or by hand:
       // lives in a separate draft gguf beside it (bound above as extraFiles.model-draft)
       "env": { "HSA_OVERRIDE_GFX_VERSION": "11.5.1" },
       "keepAliveSeconds": 300
+    },
+    {
+      "name": "qwen-image-2.1",
+      "engine": "sd.cpp",
+      "file": "/models/Qwen-Image-2.1/qwen-image-2.1-Q8_0.gguf",   // --diffusion-model
+      "extraFiles": {                                              // the rest of the pipeline
+        "vae": "/models/Qwen-Image-2.1/vae/qwen_image_2.1_vae_bf16.safetensors",
+        "llm": "/models/Qwen-Image-2.1/text_encoders/qwen3vl_8b_bf16.safetensors"
+      },
+      "args": ["--cfg-scale", "6.0", "--sampling-method", "euler"],
+      // wording that makes an RGBA-capable model paint an alpha channel; see Image generation
+      "transparentPrompt": "This is an RGBA image with transparency. {prompt}. The image has alpha channel and the background is transparent.",
+      "keepAliveSeconds": 900
     }
   ],
   "proxies": [

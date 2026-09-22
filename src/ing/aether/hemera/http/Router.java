@@ -140,6 +140,18 @@ public final class Router
     }
   }
 
+  /** Raw request bytes, for bodies that are not text (multipart uploads). */
+  public static byte[] readBytes(HttpExchange ex) throws IOException
+  {
+    try (InputStream is = ex.getRequestBody())
+    {
+      byte[] body = is.readAllBytes();
+      if (Log.traceOn())
+        Log.trace("http", "request body: " + body.length + " bytes");
+      return body;
+    }
+  }
+
   public static Map<String, Object> readJson(HttpExchange ex) throws IOException
   {
     String body = readBody(ex);

@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import ing.aether.hemera.api.ClaudeApi;
+import ing.aether.hemera.api.ImagesApi;
 import ing.aether.hemera.api.OllamaApi;
 import ing.aether.hemera.api.OpenAiApi;
 import ing.aether.hemera.api.ProxyDispatcher;
@@ -88,6 +89,7 @@ public final class Hemera
     });
     new OllamaApi(cfg, im, registry, proxies, router);
     new OpenAiApi(cfg, im, proxies, router);
+    new ImagesApi(cfg, im, proxies, router);
     new ClaudeApi(cfg, im, proxies, router);
     new AdminApi(cfg, im, registry, router);
     new StaticFiles(router);

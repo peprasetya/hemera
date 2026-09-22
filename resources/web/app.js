@@ -238,6 +238,8 @@ async function renderModels(reuseScan) {
           : f.mtpEmbedded ? '<span class="badge ok" title="MTP head baked into this file — loaded with --spec-type draft-mtp, no companion needed">+ mtp (embedded)</span>' : ""}
         ${(f.meta && f.meta["hemera.audio"]) ? '<span class="badge warn">+ audio</span>' : ""}
         ${(f.meta && f.meta["hemera.embedding"]) ? '<span class="badge" title="needs --embedding to serve /api/embed correctly">embedding</span>' : ""}
+        ${(f.meta && f.meta["hemera.kind"] === "image") ? '<span class="badge warn" title="diffusion model — runs on sd.cpp, serves /v1/images/*">image</span>' : ""}
+        ${f.imageComponents ? '<span class="badge ok" title="' + esc(Object.keys(f.imageComponents).join(", ")) + ' found beside it">+ ' + esc(Object.keys(f.imageComponents).join(" + ")) + '</span>' : ""}
         ${f.parts > 1 ? '<span class="badge">' + f.parts + " parts</span>" : ""}</td>
       <td class="small" data-label="Size">${humanSize(f.size)}</td>
       <td class="small muted" data-label="Metadata">${esc(metaTxt)}</td>
@@ -328,8 +330,24 @@ function findDetectedMtp(file) {
   return hit ? (hit.mtpPath || "") : "";
 }
 
+/** True for an engine that runs stable-diffusion.cpp's sd-server (image generation, not chat). */
+function isSdEngine(name) {
+  const e = (CONFIG.engines || {})[name] || {};
+  return e.argStyle ? e.argStyle === "sd" : /sd-server/.test(e.serverBin || e.binaryPath || "");
+}
+function firstSdEngine() {
+  return Object.keys(CONFIG.engines || {}).find(isSdEngine) || "sd.cpp";
+}
+
+/** Qwen's own recommended wording for RGBA output; {prompt} is where the request's text goes. */
+const RGBA_PROMPT_TEMPLATE = "This is an RGBA image with transparency. {prompt}. "
+  + "The image has alpha channel and the background is transparent.";
+
 function suggestArgs(scanFile) {
   const meta = (scanFile && scanFile.meta) || {};
+  // An image model takes no context size — its defaults are sampler and guidance instead.
+  if (meta["hemera.kind"] === "image")
+    return meta["hemera.arch"] === "qwen-image" ? "--cfg-scale 6.0 --sampling-method euler" : "";
   // Follow the model's own trained context straight from its gguf metadata — no arbitrary cap.
   const ctx = meta["hemera.context"] || 8192;
   let extra = meta["hemera.embedding"] ? " --embedding" : "";
@@ -348,7 +366,9 @@ function suggestName(fname) {
 function modelForm(existing, scanFile) {
   const m = existing || {};
   const engines = Object.keys(CONFIG.engines || { "llama.cpp": {} });
-  const engine = m.engine || "llama.cpp";
+  const scanMeta = (scanFile && scanFile.meta) || {};
+  // A diffusion model can only run on an sd.cpp engine, so don't make the user notice that.
+  const engine = m.engine || (scanMeta["hemera.kind"] === "image" ? firstSdEngine() : "llama.cpp");
   const installed = ((CONFIG.engines || {})[engine] || {}).installed || [];
   const versions = [...new Set(installed.map(i => i.version))].sort().reverse();
   const variants = [...new Set(installed.map(i => i.variant))];
@@ -370,7 +390,17 @@ function modelForm(existing, scanFile) {
   const extraFiles = { ...(m.extraFiles || {}) };
   if (detectedMtp && !extraFiles["model-draft"])
     extraFiles["model-draft"] = detectedMtp;
+  // A diffusion transformer is only part of a pipeline: prefill the VAE and text encoder found
+  // beside it (vae/, text_encoders/) so the flags don't have to be typed out by hand.
+  const components = (scanFile && scanFile.imageComponents) || {};
+  for (const [flag, paths] of Object.entries(components))
+    if (!extraFiles[flag] && paths.length)
+      extraFiles[flag] = paths[0];
   const extraLines = Object.entries(extraFiles).map(([k, v]) => k + "=" + v).join("\n");
+  const alternatives = Object.entries(components).filter(([, p]) => p.length > 1)
+    .map(([flag, p]) => flag + ": " + p.slice(1).map(basename).join(", "));
+  const transparentPrompt = m.transparentPrompt
+    || (scanMeta["hemera.arch"] === "qwen-image" ? RGBA_PROMPT_TEMPLATE : "");
 
   openModal(`
     <h3>${existing ? "Edit model" : "New model"}</h3>
@@ -389,7 +419,7 @@ function modelForm(existing, scanFile) {
         <datalist id="mf-variants">${variants.map(v => `<option>${esc(v)}</option>`).join("")}</datalist></div>
       <div class="full"><label>Model file (.gguf — first part for split models)</label>
         <input type="text" id="mf-file" class="mono" value="${esc(file)}"></div>
-      <div class="full"><label>Vision projector (mmproj)</label>
+      <div class="full mf-text"><label>Vision projector (mmproj)</label>
         ${mmproj ? `<div class="row" style="gap:8px">
             <input type="checkbox" id="mf-mmproj-on" checked style="width:auto">
             <span class="small">attach <span class="mono">${esc(detectedName || basename(mmproj))}</span>
@@ -406,8 +436,16 @@ function modelForm(existing, scanFile) {
            <p class="small muted">No projector found next to this model — it will run text-only.
            Projectors are paired from the model's own directory, so they are never mixed between models.</p>`}
       </div>
-      <div class="full"><label>Extra files (one per line: flag=path, e.g. mtp=/path/mtp.gguf)</label>
-        <textarea id="mf-extra" class="mono">${esc(extraLines)}</textarea></div>
+      <div class="full"><label>Extra files (one per line: flag=path, e.g. vae=/path/vae.safetensors)</label>
+        <textarea id="mf-extra" class="mono">${esc(extraLines)}</textarea>
+        ${alternatives.length ? `<p class="small muted">Also found beside this model — swap a path above to use one:
+          ${alternatives.map(a => `<span class="mono">${esc(a)}</span>`).join("; ")}</p>` : ""}</div>
+      <div class="full mf-image"><label>Transparent-background prompt (for background=transparent)</label>
+        <textarea id="mf-transparent" class="mono">${esc(transparentPrompt)}</textarea>
+        <p class="small muted">Models like Qwen-Image 2.1 decide to paint an alpha channel because the
+        <strong>prompt</strong> asked for it — there is no switch. Hemera wraps the request's text with this
+        template when a client sends <span class="mono">"background": "transparent"</span>;
+        <span class="mono">{prompt}</span> is where that text goes. Leave empty if the model cannot do RGBA.</p></div>
       <div class="full"><label>Arguments for the engine (space separated)</label>
         <textarea id="mf-args" class="mono">${esc(args)}</textarea></div>
       <div class="full"><label>Environment overrides (one per line: KEY=value, e.g. HSA_OVERRIDE_GFX_VERSION=11.5.1)</label>
@@ -426,6 +464,10 @@ function modelForm(existing, scanFile) {
     const sel = $("#mf-engine").value;
     const manual = !!(CONFIG.engines[sel] || {}).binaryPath;
     $$(".mf-managed").forEach(d => d.style.display = manual ? "none" : "");
+    // A diffusion pipeline has no mmproj, and only it can do prompt-driven transparency.
+    const image = isSdEngine(sel);
+    $$(".mf-text").forEach(d => d.style.display = image ? "none" : "");
+    $$(".mf-image").forEach(d => d.style.display = image ? "" : "none");
     // Version/variant options were only ever built for the model's original engine, so
     // switching engines has to rebuild them for whichever one is now selected.
     const curVersion = versionSelect.value;
@@ -456,6 +498,8 @@ function modelForm(existing, scanFile) {
         env: parseKv($("#mf-env").value),
         keepAliveSeconds: parseInt($("#mf-keepalive").value, 10)
       };
+      const transparent = $("#mf-transparent").value.trim();
+      if (transparent && isSdEngine(body.engine)) body.transparentPrompt = transparent;
       if (!body.mmproj) delete body.mmproj;
       if (!Object.keys(body.extraFiles).length) delete body.extraFiles;
       if (!Object.keys(body.env).length) delete body.env;

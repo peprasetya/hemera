@@ -58,6 +58,7 @@ public final class Config
     if (!(data.get("engines") instanceof Map))
       data.put("engines", engines);
     engines.computeIfAbsent("llama.cpp", k -> defaultLlamaCpp());
+    engines.computeIfAbsent("sd.cpp", k -> defaultSdCpp());
   }
 
   private static Map<String, Object> defaults()
@@ -69,6 +70,7 @@ public final class Config
     m.put("modelDirs", new ArrayList<>());
     Map<String, Object> engines = new LinkedHashMap<>();
     engines.put("llama.cpp", defaultLlamaCpp());
+    engines.put("sd.cpp", defaultSdCpp());
     m.put("engines", engines);
     m.put("models", new ArrayList<>());
     m.put("proxies", new ArrayList<>());
@@ -83,6 +85,29 @@ public final class Config
     e.put("healthPath", "/health");
     e.put("trackedVariants", new ArrayList<>(List.of("ubuntu-vulkan-x64", "ubuntu-rocm")));
     e.put("defaultArgs", new ArrayList<>(List.of("--no-webui", "-ngl", "99", "--jinja")));
+    e.put("libraryAutoDetect", Boolean.TRUE);
+    e.put("libraryPaths", new ArrayList<>());
+    e.put("installed", new ArrayList<>());
+    return e;
+  }
+
+  /**
+   * stable-diffusion.cpp's sd-server, for image generation and editing. Its health probe is
+   * /v1/models because it has no /health route — and it only starts listening once the whole
+   * pipeline is loaded, so answering there means genuinely ready.
+   */
+  private static Map<String, Object> defaultSdCpp()
+  {
+    Map<String, Object> e = new LinkedHashMap<>();
+    e.put("repo", "leejet/stable-diffusion.cpp");
+    e.put("serverBin", "sd-server");
+    e.put("argStyle", "sd");
+    e.put("healthPath", "/v1/models");
+    // Linux x86_64 only, so the Windows/macOS assets of every release stay out of the way.
+    e.put("trackedVariants", new ArrayList<>(List.of("x86_64-vulkan", "x86_64-rocm")));
+    // Deliberately empty: --diffusion-fa measured no faster than without on Vulkan and flash
+    // attention is a known source of black images on some backends, so it stays opt-in.
+    e.put("defaultArgs", new ArrayList<>());
     e.put("libraryAutoDetect", Boolean.TRUE);
     e.put("libraryPaths", new ArrayList<>());
     e.put("installed", new ArrayList<>());

@@ -76,9 +76,53 @@ public final class GgufReader
         if (val != SKIPPED && !key.startsWith("tokenizer."))
           meta.put(key, val);
       }
+      // A language model always declares general.architecture. Diffusion weights converted for
+      // stable-diffusion.cpp often carry no metadata at all (Qwen-Image ships zero KV pairs), so
+      // the only thing left to recognise them by is the shape of their tensor names, which sit
+      // immediately after the KV section.
+      if (!(meta.get("general.architecture") instanceof String))
+        imageArch(in, tensorCount).ifPresent(arch -> {
+          meta.put("hemera.kind", "image");
+          meta.put("hemera.arch", arch);
+        });
       derive(meta);
       return meta;
     }
+  }
+
+  /**
+   * Reads the first tensor names and names the diffusion architecture they belong to, or empty
+   * when they look like nothing in particular. Only the leading names are read — enough to
+   * recognise the family, without walking a tensor table thousands of entries long.
+   */
+  private static java.util.Optional<String> imageArch(InputStream in, long tensorCount)
+  {
+    StringBuilder names = new StringBuilder();
+    try
+    {
+      for (long i = 0; i < Math.min(tensorCount, 64); i++)
+      {
+        names.append(string(in)).append('\n');
+        long dims = u32(in);
+        skipN(in, dims * 8 + 4 + 8); // dimensions, ggml type, offset
+      }
+    }
+    catch (IOException e)
+    {
+      Log.debug("gguf", "could not read tensor names: " + e);
+    }
+    String n = names.toString();
+    if (n.contains("time_text_embed") && n.contains("img_in"))
+      return java.util.Optional.of("qwen-image");
+    if (n.contains("double_blocks.") || n.contains("single_blocks."))
+      return java.util.Optional.of("flux");
+    if (n.contains("joint_blocks."))
+      return java.util.Optional.of("sd3");
+    if (n.contains("model.diffusion_model.") || n.contains("input_blocks."))
+      return java.util.Optional.of("unet");
+    if (n.contains("transformer_blocks.") || n.contains("x_embedder"))
+      return java.util.Optional.of("diffusion");
+    return java.util.Optional.empty();
   }
 
   private static void derive(Map<String, Object> meta)

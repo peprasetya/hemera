@@ -191,10 +191,16 @@ public final class EngineDownloader
     }
   }
 
-  /** llama-b10254-bin-ubuntu-rocm-7.2-x64.tar.gz -> ubuntu-rocm-7.2-x64 */
+  /**
+   * llama-b10254-bin-ubuntu-rocm-7.2-x64.tar.gz -> ubuntu-rocm-7.2-x64
+   * sd-master-ac45422-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip -> Linux-Ubuntu-24.04-x86_64-vulkan
+   * Everything after "-bin-" rather than after the tag: stable-diffusion.cpp's assets carry only
+   * the commit hash, not the full "master-897-ac45422" tag, and a variant that embedded the hash
+   * would change every release and never match a model's variant filter again.
+   */
   static String variantOf(String engine, String tag, String assetName)
   {
-    Matcher m = Pattern.compile(".*-" + Pattern.quote(tag) + "-bin-(.+?)\\.(tar\\.gz|tgz|zip)$").matcher(assetName);
+    Matcher m = Pattern.compile(".*?-bin-(.+?)\\.(tar\\.gz|tgz|zip)$").matcher(assetName);
     if (m.matches())
       return m.group(1);
     return assetName.replaceAll("\\.(tar\\.gz|tgz|zip)$", "");

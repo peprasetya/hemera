@@ -120,6 +120,15 @@ public final class InstanceManager
     }
   }
 
+  /**
+   * stable-diffusion.cpp flags that name a piece of a split pipeline. Their presence in a model's
+   * extraFiles is what distinguishes a standalone diffusion transformer from an all-in-one
+   * checkpoint (see the --diffusion-model / --model choice below).
+   */
+  private static final java.util.Set<String> SD_COMPONENT_FLAGS = java.util.Set.of(
+      "vae", "llm", "llm_vision", "t5xxl", "clip_l", "clip_g", "clip_vision", "qwen2vl",
+      "qwen2vl_vision", "tae", "taesd", "high-noise-diffusion-model", "uncond-diffusion-model");
+
   private Instance start(Map<String, Object> model) throws Exception
   {
     String name = Json.str(model, "name", "?");
@@ -153,12 +162,11 @@ public final class InstanceManager
     List<String> cmd = new ArrayList<>();
     cmd.add(bin);
     // Anything that is a llama-server gets the -m/--mmproj treatment, including forks such as
-    // the one ollama bundles. Override with "argStyle": "llama" | "custom" on the engine.
-    String argStyle = Json.str(engineCfg, "argStyle", "");
-    boolean llamaStyle = argStyle.isEmpty()
-        ? Path.of(bin).getFileName().toString().contains("llama-server")
-        : "llama".equals(argStyle);
-    if (llamaStyle)
+    // the one ollama bundles; sd-server gets stable-diffusion.cpp's own spelling. Override with
+    // "argStyle": "llama" | "sd" | "custom" on the engine.
+    String style = Engines.argStyle(cfg, engineName);
+    Map<String, Object> extraFiles = Json.obj(model.get("extraFiles"));
+    if ("llama".equals(style))
     {
       cmd.add("--host");
       cmd.add("127.0.0.1");
@@ -174,7 +182,28 @@ public final class InstanceManager
         cmd.add("--mmproj");
         cmd.add(mmproj);
       }
-      for (Map.Entry<String, Object> e : Json.obj(model.get("extraFiles")).entrySet())
+    }
+    else if ("sd".equals(style))
+    {
+      cmd.add("--listen-ip");
+      cmd.add("127.0.0.1");
+      cmd.add("--listen-port");
+      cmd.add(String.valueOf(port));
+      if (!file.isEmpty())
+      {
+        // A split pipeline (Qwen-Image, Flux, ...) names its transformer with --diffusion-model
+        // and loads the text encoder and VAE separately; a self-contained checkpoint (SD1.5,
+        // SDXL) carries all three and is loaded whole with --model. The companion files are the
+        // tell, so the flag follows them rather than asking the user to know the difference.
+        boolean split = extraFiles.keySet().stream()
+            .anyMatch(k -> SD_COMPONENT_FLAGS.contains(k.replaceFirst("^--?", "")));
+        cmd.add(split ? "--diffusion-model" : "--model");
+        cmd.add(file);
+      }
+    }
+    if (!"custom".equals(style))
+    {
+      for (Map.Entry<String, Object> e : extraFiles.entrySet())
       {
         String flag = e.getKey().startsWith("-") ? e.getKey() : "--" + e.getKey();
         cmd.add(flag);
