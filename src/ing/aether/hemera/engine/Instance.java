@@ -39,6 +39,30 @@ public final class Instance
     lastUsed = System.currentTimeMillis();
   }
 
+  /**
+   * Requests currently being served. The keep-alive clock only restarts when a request finishes,
+   * so without this an image that takes longer to draw than the model's keep-alive has its engine
+   * unloaded under it half way through.
+   */
+  private final java.util.concurrent.atomic.AtomicInteger busy = new java.util.concurrent.atomic.AtomicInteger();
+
+  public void beginRequest()
+  {
+    busy.incrementAndGet();
+    touch();
+  }
+
+  public void endRequest()
+  {
+    busy.decrementAndGet();
+    touch();
+  }
+
+  public boolean busy()
+  {
+    return busy.get() > 0;
+  }
+
   public void addOutput(String line)
   {
     synchronized (recentOutput)

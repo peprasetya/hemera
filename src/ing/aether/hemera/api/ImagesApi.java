@@ -8,6 +8,7 @@ import java.util.Map;
 
 import com.sun.net.httpserver.HttpExchange;
 
+import ing.aether.hemera.Log;
 import ing.aether.hemera.config.Config;
 import ing.aether.hemera.engine.Engines;
 import ing.aether.hemera.engine.Instance;
@@ -32,14 +33,28 @@ public final class ImagesApi
   private final Config cfg;
   private final InstanceManager im;
   private final ProxyDispatcher proxies;
+  private final ImageJobs jobs;
+
+  /** Optional client-chosen id for a request, so it can be cancelled before it has answered. */
+  static final String REQUEST_ID_HEADER = "X-Hemera-Request-Id";
+
+  /**
+   * How often a streaming request checks that its client is still there. A write into a closed
+   * connection usually succeeds once (it only fills the socket buffer) before the next one
+   * fails, so noticing a Stop takes up to two of these.
+   */
+  private static final long HEARTBEAT_MS = 1000;
 
   public ImagesApi(Config cfg, InstanceManager im, ProxyDispatcher proxies, Router router)
   {
     this.cfg = cfg;
     this.im = im;
     this.proxies = proxies;
+    this.jobs = new ImageJobs(im);
     router.add("POST", "/v1/images/generations", this::generations);
     router.add("POST", "/v1/images/edits", this::edits);
+    router.add("GET", "/hemera/api/images/jobs", ex -> Router.sendJson(ex, 200, Json.map("jobs", jobs.list())));
+    router.add("POST", "/hemera/api/images/cancel", this::cancel);
   }
 
   // ---- generations (JSON) -------------------------------------------------
@@ -61,13 +76,18 @@ public final class ImagesApi
     Map<String, Object> model = localModel(name, raw);
     Map<String, Object> out = new LinkedHashMap<>(body);
     out.remove("model"); // sd-server serves whichever pipeline it was started with
+    boolean stream = takeStream(out);
+    boolean transparent = transparentRequested(out);
+    String size = Json.str(out, "size", "auto");
     applyPrompt(model, out, false);
 
-    Instance inst = im.ensure(model);
-    Map<String, Object> resp = Upstream.postJson(
-        "http://127.0.0.1:" + inst.port + "/v1/images/generations", out, null);
-    inst.touch();
-    Router.sendJson(ex, 200, resp);
+    ImageJobs.Job job = jobs.create(ex.getRequestHeaders().getFirst(REQUEST_ID_HEADER), name, "generation");
+    respond(ex, job, stream, "image_generation", size, transparent, j -> {
+      Instance inst = im.ensure(model);
+      ImageJobs.checkpoint(j);
+      return serve(inst, () -> Upstream.postJson(
+          "http://127.0.0.1:" + inst.port + "/v1/images/generations", out, null));
+    });
   }
 
   // ---- edits (multipart, or JSON for convenience) -------------------------
@@ -101,6 +121,9 @@ public final class ImagesApi
       throw new HttpError(400, "image editing is not supported for proxied models yet");
     Map<String, Object> model = localModel(name, raw);
     fields.remove("model");
+    boolean stream = takeStream(fields);
+    boolean transparent = transparentRequested(fields);
+    String size = Json.str(fields, "size", "auto");
     applyPrompt(model, fields, true);
 
     List<Multipart.Part> outParts = new ArrayList<>();
@@ -117,12 +140,177 @@ public final class ImagesApi
 
     String outBoundary = Multipart.randomBoundary();
     byte[] payload = Multipart.write(outParts, outBoundary);
-    Instance inst = im.ensure(model);
-    Map<String, Object> resp = Upstream.postBytes(
-        "http://127.0.0.1:" + inst.port + "/v1/images/edits", payload,
-        "multipart/form-data; boundary=" + outBoundary);
-    inst.touch();
-    Router.sendJson(ex, 200, resp);
+    ImageJobs.Job job = jobs.create(ex.getRequestHeaders().getFirst(REQUEST_ID_HEADER), name, "edit");
+    respond(ex, job, stream, "image_edit", size, transparent, j -> {
+      Instance inst = im.ensure(model);
+      ImageJobs.checkpoint(j);
+      return serve(inst, () -> Upstream.postBytes(
+          "http://127.0.0.1:" + inst.port + "/v1/images/edits", payload,
+          "multipart/form-data; boundary=" + outBoundary));
+    });
+  }
+
+  // ---- cancellation and streaming -----------------------------------------
+
+  /**
+   * Cancel an image request. OpenAI's Images API has no cancel endpoint — a streaming client
+   * cancels by closing the stream, which hemera notices. This is for clients that don't stream:
+   * by the id they sent in X-Hemera-Request-Id (exact), or by model (stops whatever is
+   * generating on it right now; requests still queued behind it carry on).
+   */
+  private void cancel(HttpExchange ex) throws Exception
+  {
+    Map<String, Object> body = Router.readJson(ex);
+    String id = Json.str(body, "id", null);
+    String rawModel = Json.str(body, "model", null);
+    ImageJobs.Job job;
+    if (id != null)
+    {
+      job = jobs.find(id);
+      if (job == null)
+        throw new HttpError(404, "no image request '" + id + "' is in progress");
+    }
+    else if (rawModel != null)
+    {
+      job = jobs.running(ProxyDispatcher.resolveName(cfg, rawModel));
+      if (job == null)
+      {
+        Router.sendJson(ex, 200, Json.map("cancelled", false,
+            "reason", "nothing is generating on '" + rawModel + "'"));
+        return;
+      }
+    }
+    else
+      throw new HttpError(400, "give the request's 'id' (from X-Hemera-Request-Id), or a 'model'"
+          + " to stop whatever it is generating");
+    boolean wasRunning = job.isRunning();
+    jobs.cancel(job, "cancel requested");
+    Router.sendJson(ex, 200, Json.map("cancelled", true, "id", job.id, "model", job.model,
+        "wasRunning", wasRunning));
+  }
+
+  /**
+   * Answer either as plain JSON or, with stream=true, as OpenAI's image streaming events. The
+   * stream carries a comment heartbeat while the image is drawn; a heartbeat that cannot be
+   * written means the client closed the stream, and the job is cancelled — which is how a
+   * streaming client's Stop reaches the GPU.
+   */
+  private void respond(HttpExchange ex, ImageJobs.Job job, boolean stream, String eventPrefix,
+      String size, boolean transparent, ImageJobs.Work work) throws Exception
+  {
+    ex.getResponseHeaders().set(REQUEST_ID_HEADER, job.id);
+    // a cross-origin page can only read a custom response header it has been told about
+    ex.getResponseHeaders().set("Access-Control-Expose-Headers", REQUEST_ID_HEADER);
+    if (!stream)
+    {
+      Router.sendJson(ex, 200, jobs.run(job, work));
+      return;
+    }
+
+    java.io.OutputStream os;
+    try
+    {
+      os = Router.startStream(ex, "text/event-stream");
+    }
+    catch (java.io.IOException e)
+    {
+      jobs.forget(job);
+      throw e;
+    }
+    java.util.concurrent.CompletableFuture<Map<String, Object>> result = new java.util.concurrent.CompletableFuture<>();
+    Thread.ofVirtual().name("image-" + job.id).start(() -> {
+      try
+      {
+        result.complete(jobs.run(job, work));
+      }
+      catch (Throwable t)
+      {
+        result.completeExceptionally(t);
+      }
+    });
+
+    long started = System.currentTimeMillis();
+    while (true)
+    {
+      try
+      {
+        Map<String, Object> resp = result.get(HEARTBEAT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        long created = Json.num(resp, "created", System.currentTimeMillis() / 1000);
+        String format = Json.str(resp, "output_format", "png");
+        try
+        {
+          for (Map<String, Object> d : Json.arrOfObj(resp.get("data")))
+            Router.sse(os, eventPrefix + ".completed", Json.map(
+                "type", eventPrefix + ".completed",
+                "b64_json", Json.str(d, "b64_json", ""),
+                "created_at", created,
+                "size", size,
+                "background", transparent ? "transparent" : "opaque",
+                "output_format", format));
+        }
+        catch (java.io.IOException gone)
+        {
+          Log.debug("images", "client left just before '" + job.id + "' was delivered");
+        }
+        return;
+      }
+      catch (java.util.concurrent.TimeoutException stillWorking)
+      {
+        try
+        {
+          Router.sseComment(os, (job.isRunning() ? "generating " : "queued ")
+              + (System.currentTimeMillis() - started) / 1000 + "s");
+        }
+        catch (java.io.IOException gone)
+        {
+          jobs.cancel(job, "client closed the stream");
+          return;
+        }
+      }
+      catch (java.util.concurrent.ExecutionException failed)
+      {
+        Throwable cause = failed.getCause();
+        try
+        {
+          Router.sse(os, "error", Json.map("type", "error", "error", Json.map(
+              "code", job.isCancelled() ? "cancelled" : "generation_failed",
+              "message", String.valueOf(cause.getMessage()))));
+        }
+        catch (java.io.IOException ignored)
+        {
+          // client already gone
+        }
+        return;
+      }
+    }
+  }
+
+  /** Mark the engine busy for the length of the call, so the idle reaper leaves it alone. */
+  private static Map<String, Object> serve(Instance inst, java.util.concurrent.Callable<Map<String, Object>> call)
+      throws Exception
+  {
+    inst.beginRequest();
+    try
+    {
+      return call.call();
+    }
+    finally
+    {
+      inst.endRequest();
+    }
+  }
+
+  /**
+   * Remove OpenAI's streaming fields before the request goes to sd-server, which has no
+   * streaming of its own. partial_images is accepted and ignored: sd.cpp produces no previews,
+   * so a stream carries only the finished image — which the OpenAI spec allows, since a fast
+   * generation may finish before any partial is due.
+   */
+  private static boolean takeStream(Map<String, Object> fields)
+  {
+    fields.remove("partial_images");
+    Object v = fields.remove("stream");
+    return Boolean.TRUE.equals(v) || "true".equalsIgnoreCase(String.valueOf(v));
   }
 
   /** Accept a JSON edit body so a plain curl/fetch client need not build multipart by hand. */

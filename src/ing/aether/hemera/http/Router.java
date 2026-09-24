@@ -243,6 +243,17 @@ public final class Router
     os.flush();
   }
 
+  /**
+   * An SSE comment line, which every client discards. Its use is as a heartbeat: writing is the
+   * only way to find out that the client has gone, because the server is never told when a
+   * connection closes.
+   */
+  public static void sseComment(OutputStream os, String text) throws IOException
+  {
+    os.write((": " + text.replace('\n', ' ') + "\n\n").getBytes(StandardCharsets.UTF_8));
+    os.flush();
+  }
+
   public static void ndjson(OutputStream os, Object obj) throws IOException
   {
     String line = Json.write(obj) + "\n";

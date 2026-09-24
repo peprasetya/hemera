@@ -6,8 +6,8 @@ const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
 
 // ---------------------------------------------------------------- api helpers
 
-async function api(method, path, body) {
-  const opts = { method, headers: {} };
+async function api(method, path, body, headers) {
+  const opts = { method, headers: { ...(headers || {}) } };
   if (body !== undefined) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
@@ -19,15 +19,15 @@ async function api(method, path, body) {
   return data;
 }
 /** Multipart POST — the browser sets its own boundary, so no Content-Type here. */
-async function postForm(path, form) {
-  const resp = await fetch(path, { method: "POST", body: form });
+async function postForm(path, form, headers) {
+  const resp = await fetch(path, { method: "POST", body: form, headers: headers || {} });
   let data = null;
   try { data = await resp.json(); } catch (e) { /* empty body */ }
   if (!resp.ok) throw new Error((data && data.error) || ("POST " + path + " -> " + resp.status));
   return data;
 }
 const GET = p => api("GET", p);
-const POST = (p, b) => api("POST", p, b);
+const POST = (p, b, h) => api("POST", p, b, h);
 const PUT = (p, b) => api("PUT", p, b);
 const DEL = p => api("DELETE", p);
 
@@ -946,6 +946,7 @@ function renderImages() {
       </div>
       <div class="row actions">
         <button class="btn primary" id="im-go">${IMG_STATE.busy ? "Working…" : "Generate"}</button>
+        <button class="btn danger" id="im-stop" style="${IMG_STATE.busy ? "" : "display:none"}">Stop</button>
         <span class="small muted" id="im-status"></span>
       </div>
     </div>
@@ -953,6 +954,7 @@ function renderImages() {
 
   const filesInput = $("#im-files");
   const go = $("#im-go");
+  const stop = $("#im-stop");
   const status = $("#im-status");
 
   const label = () => go.textContent = filesInput.files.length
@@ -965,10 +967,15 @@ function renderImages() {
     if (IMG_STATE.busy) return;
     const prompt = $("#im-prompt").value.trim();
     if (!prompt) { toast("Enter a prompt first", true); return; }
-    IMG_STATE = { ...IMG_STATE, busy: true, prompt, model: $("#im-model").value,
+    // Naming the request up front is what makes Stop possible: the id is known before the
+    // (minutes-long) response arrives, so the cancel endpoint can be told which job to drop.
+    const reqId = "ui_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const idHeader = { "X-Hemera-Request-Id": reqId };
+    IMG_STATE = { ...IMG_STATE, busy: true, stopped: false, reqId, prompt, model: $("#im-model").value,
       size: $("#im-size").value.trim(), steps: +$("#im-steps").value, seed: +$("#im-seed").value,
       transparent: $("#im-transparent").checked, keepSize: $("#im-keepsize").checked };
     go.disabled = true;
+    stop.style.display = "";
     const started = Date.now();
     // Generation is slow enough that silence looks like a hang — count up while we wait.
     const tick = setInterval(() => status.textContent =
@@ -987,9 +994,9 @@ function renderImages() {
         if (IMG_STATE.keepSize)
           form.set("prompt", prompt + ' <sd_cpp_extra_args>{"auto_resize_ref_image":false}</sd_cpp_extra_args>');
         for (const f of filesInput.files) form.append("image[]", f, f.name);
-        data = await postForm("/v1/images/edits", form);
+        data = await postForm("/v1/images/edits", form, idHeader);
       } else {
-        data = await POST("/v1/images/generations", body);
+        data = await POST("/v1/images/generations", body, idHeader);
       }
       const secs = Math.round((Date.now() - started) / 1000);
       IMG_STATE.results = (data.data || []).map(d => ({
@@ -998,14 +1005,24 @@ function renderImages() {
       })).concat(IMG_STATE.results).slice(0, 8);
       status.textContent = "done in " + secs + "s";
     } catch (e) {
-      status.textContent = "";
-      fail(e);
+      // A request we cancelled ourselves comes back as an error; that is the expected outcome.
+      if (IMG_STATE.stopped) status.textContent = "stopped — the GPU has been released";
+      else { status.textContent = ""; fail(e); }
     } finally {
       clearInterval(tick);
       IMG_STATE.busy = false;
       go.disabled = false;
+      stop.style.display = "none";
       paintResults();
     }
+  };
+  stop.onclick = async () => {
+    if (!IMG_STATE.busy || !IMG_STATE.reqId) return;
+    IMG_STATE.stopped = true;
+    stop.disabled = true;
+    try { await POST("/hemera/api/images/cancel", { id: IMG_STATE.reqId }); }
+    catch (e) { IMG_STATE.stopped = false; fail(e); }
+    finally { stop.disabled = false; }
   };
   paintResults();
 }

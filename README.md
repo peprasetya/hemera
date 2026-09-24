@@ -222,6 +222,34 @@ Two behaviours are hemera's own, because the underlying endpoint is surprising:
 Image models are refused by the chat, completion and embedding endpoints with a message pointing
 at the right one, and vice versa.
 
+### Cancelling
+
+OpenAI's Images API has no cancel endpoint; hemera supports both ways a client can stop a
+generation, and either one actually frees the GPU rather than just abandoning the wait:
+
+- **Streaming** (`"stream": true`, the OpenAI way): the reply is a stream of
+  `image_generation.completed` / `image_edit.completed` events, with a comment heartbeat every
+  second while the image is drawn. Closing the stream is the cancel — hemera notices within about
+  two seconds. `partial_images` is accepted but sd.cpp produces no previews, so only the finished
+  image is sent.
+- **Explicitly**, for clients that don't stream: name the request with an
+  `X-Hemera-Request-Id: <your-id>` header (hemera generates one and returns it in the same header
+  otherwise), then
+
+  ```bash
+  curl -X POST http://host:12434/hemera/api/images/cancel -H 'Content-Type: application/json' -d '{"id":"<your-id>"}'
+  ```
+
+  The cancelled request answers `409` with `"was cancelled"`. `{"model":"..."}` instead of an id
+  stops whatever is generating on that model. `GET /hemera/api/images/jobs` lists what is running
+  and queued.
+
+sd-server cannot interrupt a generation over HTTP (it rejects that with 409 "cannot be interrupted
+yet"), so a cancel stops the engine process. That costs little — sd.cpp loads its weights lazily
+on the next image, from page cache — and hemera queues image requests itself, one per model, so
+only the cancelled job is ever inside the engine: a request still waiting just leaves the queue,
+and nobody else's work is lost.
+
 ## Configuration
 
 Everything is one JSON document (`hemera.json`), editable in the UI or by hand:

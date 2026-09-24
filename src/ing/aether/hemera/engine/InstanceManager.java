@@ -392,6 +392,29 @@ public final class InstanceManager
     return true;
   }
 
+  /**
+   * Stop an engine without the graceful SIGTERM grace period. For abandoning work in progress:
+   * sd-server busy in a GPU loop does not act on SIGTERM promptly, so the polite stop always ran
+   * out its full wait, and there is nothing in a half-drawn image worth shutting down cleanly for.
+   */
+  public boolean kill(String name)
+  {
+    Instance i = instances.remove(name);
+    if (i == null)
+      return false;
+    Log.info("instance", "Killing '" + name + "' (pid " + i.process.pid() + ")");
+    i.process.destroyForcibly();
+    try
+    {
+      i.process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+    catch (InterruptedException e)
+    {
+      Thread.currentThread().interrupt();
+    }
+    return true;
+  }
+
   public void stopAll()
   {
     for (String name : List.copyOf(instances.keySet()))
@@ -440,6 +463,8 @@ public final class InstanceManager
             instances.remove(i.name);
             continue;
           }
+          if (i.busy())
+            continue;
           if (i.keepAliveSec >= 0 && now - i.lastUsed > i.keepAliveSec * 1000L)
           {
             Log.info("instance", "Unloading idle '" + i.name + "' (keep-alive " + i.keepAliveSec + "s)");
