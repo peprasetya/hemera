@@ -28,6 +28,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import com.sun.net.httpserver.HttpExchange;
@@ -51,8 +52,6 @@ import ing.aether.hemera.json.Json;
  */
 public final class ComfyBridge
 {
-  private static final String[] BUILTIN = { "trellis2", "pixal3d", "hunyuan3d-2.1", "ltx-2.5",
-      "minimax-h3-turbo", "minimax-h3", "qwen-image" };
   private static final long SNAPSHOT_TTL_MS = 30_000;
   private static final long NODES_TTL_MS = 10 * 60_000;
   /** Where uploads and results go inside ComfyUI's input/ and output/, to keep them apart from its own. */
@@ -375,19 +374,72 @@ public final class ComfyBridge
     }
   }
 
-  /** Recipes from <home>/comfyui/*.json first, so one of the same id replaces the built-in. */
-  private List<Recipe> recipes()
+  // ---- recipes: what ships, what the user added, and how they are managed -------------------
+
+  private static final Pattern RECIPE_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,63}");
+
+  private Path recipeDir()
   {
-    Map<String, Recipe> out = new LinkedHashMap<>();
-    Path own = cfg.home.resolve("comfyui");
+    return cfg.home.resolve("comfyui");
+  }
+
+  /** The recipes that come inside hemera, by id, as written. */
+  private static Map<String, Map<String, Object>> builtinJson()
+  {
+    Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+    List<String> names = new ArrayList<>();
+    try
+    {
+      Path where = Path.of(ComfyBridge.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+      if (Files.isDirectory(where))
+      {
+        try (Stream<Path> list = Files.list(where.resolve("comfyui")))
+        {
+          list.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".json")).sorted().forEach(names::add);
+        }
+      }
+      else
+        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(where.toFile()))
+        {
+          jar.stream().map(java.util.zip.ZipEntry::getName)
+              .filter(n -> n.startsWith("comfyui/") && n.endsWith(".json")).sorted().forEach(names::add);
+        }
+    }
+    catch (Exception e)
+    {
+      Log.warn("comfyui", "cannot list the built-in recipes: " + e.getMessage());
+    }
+    for (String name : names)
+    {
+      String resource = name.startsWith("comfyui/") ? "/" + name : "/comfyui/" + name;
+      try (InputStream is = ComfyBridge.class.getResourceAsStream(resource))
+      {
+        if (is == null)
+          throw new IOException("missing from the jar");
+        Map<String, Object> json = Json.parseObj(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+        out.putIfAbsent(Json.str(json, "id", name), json);
+      }
+      catch (Exception e)
+      {
+        Log.warn("comfyui", "built-in recipe '" + name + "' is unusable: " + e.getMessage());
+      }
+    }
+    return out;
+  }
+
+  /** The user's recipes in <home>/comfyui/*.json, by id, as written (including switch-offs). */
+  private Map<String, Map<String, Object>> customJson()
+  {
+    Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+    Path own = recipeDir();
     if (Files.isDirectory(own))
       try (Stream<Path> list = Files.list(own))
       {
         for (Path p : list.filter(f -> f.toString().endsWith(".json")).sorted().toList())
           try
           {
-            Recipe r = new Recipe(Json.parseObj(Files.readString(p, StandardCharsets.UTF_8)));
-            out.put(r.id, r);
+            Map<String, Object> json = Json.parseObj(Files.readString(p, StandardCharsets.UTF_8));
+            out.put(Json.str(json, "id", ""), json);
           }
           catch (Exception e)
           {
@@ -398,19 +450,167 @@ public final class ComfyBridge
       {
         Log.warn("comfyui", "cannot read " + own + ": " + e.getMessage());
       }
-    for (String name : BUILTIN)
-      try (InputStream is = ComfyBridge.class.getResourceAsStream("/comfyui/" + name + ".json"))
+    return out;
+  }
+
+  /** The recipes in force: the user's first, so one of the same id replaces the built-in. */
+  private List<Recipe> recipes()
+  {
+    Map<String, Recipe> out = new LinkedHashMap<>();
+    Set<String> off = new HashSet<>();
+    for (Map.Entry<String, Map<String, Object>> e : customJson().entrySet())
+    {
+      if (Json.bool(e.getValue(), "disabled", false))
       {
-        if (is == null)
-          throw new IOException("missing from the jar");
-        Recipe r = new Recipe(Json.parseObj(new String(is.readAllBytes(), StandardCharsets.UTF_8)));
-        out.putIfAbsent(r.id, r);
+        off.add(e.getKey());
+        continue;
+      }
+      try
+      {
+        out.put(e.getKey(), new Recipe(e.getValue()));
+      }
+      catch (Exception x)
+      {
+        Log.warn("comfyui", "ignoring recipe '" + e.getKey() + "': " + x.getMessage());
+      }
+    }
+    for (Map.Entry<String, Map<String, Object>> e : builtinJson().entrySet())
+      if (!off.contains(e.getKey()) && !out.containsKey(e.getKey()))
+        try
+        {
+          out.put(e.getKey(), new Recipe(e.getValue()));
+        }
+        catch (Exception x)
+        {
+          Log.warn("comfyui", "built-in recipe '" + e.getKey() + "' is unusable: " + x.getMessage());
+        }
+    return new ArrayList<>(out.values());
+  }
+
+  /**
+   * Every recipe there is, for the admin UI: where it comes from ("built-in", "custom" or "custom,
+   * replacing the built-in"), whether it is switched off, whether it parses, and its JSON.
+   */
+  public List<Object> recipeList()
+  {
+    Map<String, Map<String, Object>> built = builtinJson();
+    Map<String, Map<String, Object>> custom = customJson();
+    Set<String> ids = new java.util.TreeSet<>(built.keySet());
+    ids.addAll(custom.keySet());
+    List<Object> out = new ArrayList<>();
+    for (String id : ids)
+    {
+      Map<String, Object> c = custom.get(id);
+      boolean off = c != null && Json.bool(c, "disabled", false);
+      Map<String, Object> json = c != null && !off ? c : built.get(id);
+      String source = off ? "switched off" : c == null ? "built-in" : built.containsKey(id)
+          ? "custom, replacing the built-in" : "custom";
+      String error = null;
+      String title = id;
+      String kind = "";
+      if (json != null)
+        try
+        {
+          Recipe r = new Recipe(json);
+          title = r.title;
+          kind = r.kind;
+        }
+        catch (Exception e)
+        {
+          error = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        }
+      out.add(Json.map("id", id, "title", title, "kind", kind, "source", source,
+          "builtin", built.containsKey(id), "disabled", off, "error", error, "recipe", json));
+    }
+    return out;
+  }
+
+  /**
+   * Save a recipe the user wrote or edited. It must parse, and its graph is checked against this
+   * ComfyUI's nodes when ComfyUI is reachable; what cannot work is refused, what may not is
+   * returned as warnings. Saving over a built-in's id replaces it; {"disabled": true} switches a
+   * built-in off.
+   */
+  public Map<String, Object> saveRecipe(String id, Map<String, Object> json)
+  {
+    if (!RECIPE_ID.matcher(id).matches())
+      throw new HttpError(400, "a recipe id is letters, digits, '.', '_' and '-', up to 64 characters");
+    json = new LinkedHashMap<>(json);
+    String given = Json.str(json, "id", id);
+    if (!given.equals(id))
+      throw new HttpError(400, "the recipe's 'id' is '" + given + "' but it is being saved as '" + id + "'");
+    json.put("id", id);
+    List<Object> warnings = new ArrayList<>();
+    if (Json.bool(json, "disabled", false))
+    {
+      if (!builtinJson().containsKey(id))
+        throw new HttpError(400, "'" + id + "' is not a built-in recipe — delete it instead");
+      json = Json.map("id", id, "disabled", true);
+    }
+    else
+    {
+      Recipe r;
+      try
+      {
+        r = new Recipe(json);
       }
       catch (Exception e)
       {
-        Log.warn("comfyui", "built-in recipe '" + name + "' is unusable: " + e.getMessage());
+        throw new HttpError(400, "recipe '" + id + "' is not usable: "
+            + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
       }
-    return new ArrayList<>(out.values());
+      Set<String> known = nodes;
+      if (known != null)
+        for (String type : r.classTypes())
+          if (!known.contains(type))
+            warnings.add("this ComfyUI has no '" + type + "' node");
+      if (r.components.stream().anyMatch(c -> c.folder().isEmpty()))
+        warnings.add("a component has no 'folder', so it can never be found");
+    }
+    try
+    {
+      Files.createDirectories(recipeDir());
+      Path file = recipeDir().resolve(id + ".json");
+      Path tmp = recipeDir().resolve(id + ".json.tmp");
+      Files.writeString(tmp, Json.writePretty(json) + "\n", StandardCharsets.UTF_8);
+      Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+          java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+    }
+    catch (IOException e)
+    {
+      throw new HttpError(500, "cannot write the recipe: " + e.getMessage());
+    }
+    invalidate();
+    Log.info("comfyui", "recipe '" + id + "' saved");
+    return Json.map("id", id, "saved", true, "warnings", warnings);
+  }
+
+  /**
+   * Remove the user's version of a recipe: a custom one disappears, an edited built-in goes back to
+   * what shipped, a switched-off built-in comes back. A built-in nobody has touched is only switched
+   * off, with saveRecipe.
+   */
+  public Map<String, Object> removeRecipe(String id)
+  {
+    if (!RECIPE_ID.matcher(id).matches())
+      throw new HttpError(400, "bad recipe id");
+    Path file = recipeDir().resolve(id + ".json");
+    boolean builtin = builtinJson().containsKey(id);
+    if (!Files.exists(file))
+      throw new HttpError(builtin ? 409 : 404, builtin
+          ? "'" + id + "' is built in and unchanged — switch it off instead (PUT {\"disabled\": true})"
+          : "no recipe '" + id + "'");
+    try
+    {
+      Files.delete(file);
+    }
+    catch (IOException e)
+    {
+      throw new HttpError(500, "cannot remove the recipe: " + e.getMessage());
+    }
+    invalidate();
+    Log.info("comfyui", "recipe '" + id + "' removed" + (builtin ? " (the built-in applies again)" : ""));
+    return Json.map("id", id, "deleted", true, "builtinApplies", builtin);
   }
 
   private List<String> listFolder(String folder)

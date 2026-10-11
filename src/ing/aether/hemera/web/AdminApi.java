@@ -60,6 +60,18 @@ public final class AdminApi
     router.add("POST", "/hemera/api/loglevel", this::logLevel);
     router.add("GET", "/hemera/api/comfyui",
         ex -> Router.sendJson(ex, 200, comfy.status("1".equals(Router.query(ex, "refresh")))));
+    router.add("GET", "/hemera/api/comfyui/recipes",
+        ex -> Router.sendJson(ex, 200, Json.map("object", "list", "data", comfy.recipeList())));
+    router.addPrefix("PUT", "/hemera/api/comfyui/recipes/",
+        ex -> Router.sendJson(ex, 200, comfy.saveRecipe(recipeId(ex), Router.readJson(ex))));
+    router.addPrefix("DELETE", "/hemera/api/comfyui/recipes/",
+        ex -> Router.sendJson(ex, 200, comfy.removeRecipe(recipeId(ex))));
+  }
+
+  private static String recipeId(HttpExchange ex)
+  {
+    String path = ex.getRequestURI().getPath();
+    return java.net.URLDecoder.decode(path.substring(path.lastIndexOf('/') + 1), java.nio.charset.StandardCharsets.UTF_8);
   }
 
   private void status(HttpExchange ex) throws Exception

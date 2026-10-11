@@ -343,12 +343,18 @@ The full contract for client authors — discovery, every field, the job objects
 **Recipes.** What turns a file into a model is a *recipe*: a small JSON document naming the files
 a family needs (by pattern, per ComfyUI folder), the request parameters and where each lands, and
 the workflow itself in ComfyUI's API format. Built-in recipes cover TRELLIS.2, Pixal3D,
-Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain, and turbo-merged checkpoints) and Qwen-Image; they are
-the files in [resources/comfyui/](resources/comfyui/). A file `<home>/comfyui/<name>.json` adds a
-family, or replaces the built-in of the same `id`, with no rebuild — export a workflow from
-ComfyUI with *Save (API format)*, wrap it the way the built-ins are wrapped, and the next look
-picks it up. A model is offered only when ComfyUI has every file and node its recipe needs; the
-Directories tab says what is missing otherwise.
+Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain, and turbo-merged checkpoints), Qwen-Image and
+Qwen-Image 2.1 Turbo; they are the files in [resources/comfyui/](resources/comfyui/), and the jar
+lists them itself, so adding one is adding a file. Recipes are managed in the Directories tab, under
+*Recipes*: **Edit** opens one as JSON (a built-in saved there is stored as your own version, and
+**Revert** brings the original back), **New recipe** starts a family hemera does not know, and
+**Switch off** hides a built-in without deleting it. Saving checks that the recipe parses, that its
+graph's output exists and, when ComfyUI is reachable, warns about nodes it lacks. The same is
+available over HTTP — `GET /hemera/api/comfyui/recipes`, `PUT` and `DELETE`
+`/hemera/api/comfyui/recipes/{id}` — and underneath it is just `<home>/comfyui/<id>.json`: export a
+workflow from ComfyUI with *Save (API format)*, wrap it the way the built-ins are wrapped, and the
+next look picks it up. A model is offered only when ComfyUI has every file and node its recipe
+needs; the Directories tab says what is missing otherwise.
 
 Community checkpoints rarely follow a naming scheme, so a file no pattern recognises is listed
 under *Not recognised*, where it can be assigned to a family by hand (stored as

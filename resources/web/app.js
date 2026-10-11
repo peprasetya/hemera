@@ -939,6 +939,8 @@ async function renderComfy(refresh) {
   const c = CONFIG.comfyui || {};
   let st = null;
   try { st = await GET("/hemera/api/comfyui" + (refresh ? "?refresh=1" : "")); } catch (e) { fail(e); }
+  let recipes = [];
+  try { recipes = (await GET("/hemera/api/comfyui/recipes")).data; } catch (e) { fail(e); }
   if (!$("#comfy")) return;
   const models = (st && st.models) || [];
   const loose = (st && st.unassigned) || [];
@@ -959,6 +961,20 @@ async function renderComfy(refresh) {
         <button class="btn xs" data-comfy-assign="${i}">Assign</button>
         <button class="btn xs" data-comfy-hide="${i}">Hide</button></div></td>
     </tr>`).join("");
+  const recipeRows = recipes.map((r, i) => {
+    const used = models.filter(m => m.recipe === r.id).length;
+    const act = r.disabled ? `<button class="btn xs" data-recipe-restore="${i}">Switch on</button>`
+      : `<button class="btn xs" data-recipe-edit="${i}">Edit</button>` + (r.source === "built-in"
+        ? ` <button class="btn xs danger" data-recipe-off="${i}">Switch off</button>`
+        : ` <button class="btn xs danger" data-recipe-del="${i}">${r.builtin ? "Revert" : "Delete"}</button>`);
+    return `<tr>
+      <td data-label="Recipe" class="mono">${esc(r.id)}${r.error ? `<div class="small" style="color:var(--danger)">${esc(r.error)}</div>` : ""}</td>
+      <td data-label="Makes">${r.kind ? `<span class="badge warn">${esc(r.kind)}</span>` : ""}</td>
+      <td data-label="Source">${esc(r.source)}</td>
+      <td data-label="Models">${r.disabled ? "" : used}</td>
+      <td data-label="">${act}</td>
+    </tr>`;
+  }).join("");
   paint(el, `
     <h2>ComfyUI</h2>
     <div class="card">
@@ -978,6 +994,12 @@ async function renderComfy(refresh) {
       </div>
       ${rows ? `<div class="tablewrap" style="margin-top:12px"><table class="stack">
         <tr><th>Model</th><th>Makes</th><th>Family</th><th>Status</th></tr>${rows}</table></div>` : ""}
+      <h3 style="margin-top:16px">Recipes</h3>
+      <p class="small muted">A recipe tells hemera how to run one family of models: which files make it up, the
+      workflow to build, and the parameters a client may set. Edit one, add your own, or switch a built-in off.</p>
+      <div class="tablewrap"><table class="stack">
+        <tr><th>Recipe</th><th>Makes</th><th>Source</th><th>Models</th><th></th></tr>${recipeRows}</table></div>
+      <div class="row" style="margin-top:8px"><button class="btn" id="recipe-new">New recipe</button></div>
       ${looseRows ? `<h3 style="margin-top:16px">Not recognised</h3>
         <p class="small muted">Model files whose name matches no workflow. If one is a variant of a family hemera
         knows, say which.</p>
@@ -1002,6 +1024,67 @@ async function renderComfy(refresh) {
   $$("[data-comfy-assign]", el).forEach(b => b.onclick = () =>
     assign(+b.dataset.comfyAssign, $(`[data-comfy-recipe="${b.dataset.comfyAssign}"]`, el).value));
   $$("[data-comfy-hide]", el).forEach(b => b.onclick = () => assign(+b.dataset.comfyHide, "-"));
+
+  const done = async (p, msg) => {
+    try { const r = await p; toast(msg + (r && r.warnings && r.warnings.length ? " — " + r.warnings.join("; ") : "")); renderComfy(true); }
+    catch (e) { fail(e); }
+  };
+  $$("[data-recipe-edit]", el).forEach(b => b.onclick = () => editRecipe(recipes[+b.dataset.recipeEdit]));
+  $$("[data-recipe-off]", el).forEach(b => b.onclick = () => {
+    const r = recipes[+b.dataset.recipeOff];
+    if (confirm("Switch off '" + r.id + "'? Models that use it stop being offered; it can be switched on again."))
+      done(PUT("/hemera/api/comfyui/recipes/" + encodeURIComponent(r.id), { id: r.id, disabled: true }), "Recipe switched off");
+  });
+  $$("[data-recipe-restore]", el).forEach(b => b.onclick = () =>
+    done(DEL("/hemera/api/comfyui/recipes/" + encodeURIComponent(recipes[+b.dataset.recipeRestore].id)), "Recipe switched on"));
+  $$("[data-recipe-del]", el).forEach(b => b.onclick = () => {
+    const r = recipes[+b.dataset.recipeDel];
+    if (confirm(r.builtin ? "Drop your changes to '" + r.id + "' and use the built-in again?" : "Delete recipe '" + r.id + "'?"))
+      done(DEL("/hemera/api/comfyui/recipes/" + encodeURIComponent(r.id)), r.builtin ? "Back to the built-in" : "Recipe deleted");
+  });
+  $("#recipe-new").onclick = () => editRecipe(null);
+}
+
+const RECIPE_TEMPLATE = {
+  id: "my-model", title: "My model", kind: "image", description: "",
+  model: { folder: "diffusion_models", match: "(?i)^my-model.*\\.safetensors$", set: ["1.unet_name"] },
+  components: {
+    text_encoder: { folder: "text_encoders", match: "(?i)encoder.*\\.safetensors$", set: ["2.clip_name"] },
+    vae: { folder: "vae", match: "(?i)vae.*\\.safetensors$", set: ["3.vae_name"] }
+  },
+  params: {
+    prompt: { type: "string", required: true, set: ["4.text"] },
+    seed: { type: "int", default: "random", min: 0, set: ["5.seed"] }
+  },
+  output: { node: "6" },
+  graph: { "1": { class_type: "UNETLoader", inputs: { unet_name: "", weight_dtype: "default" } } }
+};
+
+/** Edit a recipe as JSON; saving a built-in's id replaces it, and "Revert" brings it back. */
+function editRecipe(r) {
+  const text = JSON.stringify(r ? r.recipe : RECIPE_TEMPLATE, null, 1);
+  openModal(`
+    <h2>${r ? "Edit recipe — " + esc(r.id) : "New recipe"}</h2>
+    <p class="small muted">${r && r.builtin ? "This one is built in: saving stores your version beside it, and Revert brings the original back. "
+      : ""}The graph is ComfyUI's API format (Save (API Format) in its menu). A parameter's <code>set</code> lists the
+      <code>node.input</code> fields it fills; see <code>docs/media-api.md</code> for the rest.</p>
+    <textarea id="rc-json" class="mono" style="width:100%;min-height:55vh;white-space:pre" spellcheck="false">${esc(text)}</textarea>
+    <div class="row actions">
+      <button class="btn primary" id="rc-save">Save</button>
+      <button class="btn" id="rc-cancel">Cancel</button>
+    </div>`);
+  $("#rc-cancel").onclick = closeModal;
+  $("#rc-save").onclick = async () => {
+    let json;
+    try { json = JSON.parse($("#rc-json").value); } catch (e) { return fail("That is not valid JSON: " + e.message); }
+    if (!json.id) return fail("The recipe needs an 'id'.");
+    try {
+      const out = await PUT("/hemera/api/comfyui/recipes/" + encodeURIComponent(json.id), json);
+      closeModal();
+      toast("Recipe saved" + (out.warnings && out.warnings.length ? " — " + out.warnings.join("; ") : ""));
+      renderComfy(true);
+    } catch (e) { fail(e); }
+  };
 }
 
 // ---------------------------------------------------------------- proxies
