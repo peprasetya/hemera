@@ -69,6 +69,17 @@ public final class Upstream
     return Json.parseObj(resp.body());
   }
 
+  /** GET returning parsed JSON. Throws HttpError on non-2xx. */
+  public static Map<String, Object> getJson(String url) throws IOException, InterruptedException
+  {
+    HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofMinutes(2)).GET().build();
+    HttpResponse<String> resp = HC.send(req, HttpResponse.BodyHandlers.ofString());
+    if (resp.statusCode() / 100 != 2)
+      throw new HttpError(resp.statusCode() >= 500 ? 502 : resp.statusCode(),
+          "upstream " + url + " returned " + resp.statusCode() + ": " + abbrev(resp.body()));
+    return Json.parseObj(resp.body());
+  }
+
   /** POST a pre-encoded body (e.g. multipart) and parse the JSON reply. Throws HttpError on non-2xx. */
   public static Map<String, Object> postBytes(String url, byte[] body, String contentType)
       throws IOException, InterruptedException

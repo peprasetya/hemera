@@ -38,6 +38,7 @@ let STATUS = null;   // /status
 let SCAN = null;     // /scan result
 let USAGE = {};      // engine binary -> [model names]
 let RELEASES = {};   // engine -> releases list
+let COMFY = null;    // /comfyui: what the ComfyUI bridge currently offers
 let LIBS = {};      // engine binary -> runtime library status
 let showAllAssets = false;
 
@@ -53,6 +54,19 @@ function humanSize(n) {
   return v.toFixed(v >= 100 || i === 0 ? 0 : 1) + " " + u[i];
 }
 function basename(p) { return String(p || "").split("/").pop(); }
+
+/**
+ * What to show for a configured model's file. An ollama blob is named after its 64-character
+ * hash, which says nothing and is too long to fit: show the ollama model it belongs to when the
+ * scan knows it, otherwise a shortened hash. The full path stays in the tooltip.
+ */
+function fileLabel(path) {
+  const hit = (SCAN && SCAN.files || []).find(f => f.path === path);
+  if (hit && hit.source === "ollama") return "ollama: " + hit.name;
+  const name = basename(path);
+  const m = /^sha256-([0-9a-f]{64})$/.exec(name);
+  return m ? "sha256-" + m[1].slice(0, 12) + "…" + m[1].slice(-4) : name;
+}
 
 let toastTimer = null;
 function toast(msg, isError) {
@@ -108,6 +122,7 @@ async function navigate() {
   SECTIONS.forEach(s => $("#sec-" + s).classList.toggle("visible", s === sec));
   try {
     CONFIG = await GET("/hemera/api/config");
+    if (sec === "models" || sec === "images") COMFY = await GET("/hemera/api/comfyui").catch(() => COMFY);
     if (sec === "dashboard") await renderDashboard();
     if (sec === "models") await renderModels();
     if (sec === "engines") await renderEngines();
@@ -216,8 +231,8 @@ async function renderModels(reuseScan) {
     <tr>
       <td class="mono" data-label="Name">${esc(m.name)}</td>
       <td class="small" data-label="Engine binary">${esc(modelBinaryDesc(m))}</td>
-      <td class="small mono" data-label="File" title="${esc(m.file || "")}">${esc(basename(m.file))}${m.mmproj ? '<br><span class="badge">mmproj</span>' : ""}</td>
-      <td class="small mono" data-label="Args">${esc((m.args || []).join(" "))}</td>
+      <td class="small mono wrap" data-label="File" title="${esc(m.file || "")}">${esc(fileLabel(m.file))}${m.mmproj ? '<br><span class="badge">mmproj</span>' : ""}</td>
+      <td class="small mono wrap" data-label="Args">${esc((m.args || []).join(" "))}</td>
       <td class="actions nowrap">
         ${running.has(m.name)
           ? `<span class="badge ok">loaded</span><button class="btn xs" data-unload="${esc(m.name)}">Unload</button>`
@@ -239,7 +254,7 @@ async function renderModels(reuseScan) {
       meta["hemera.context"] ? "ctx " + meta["hemera.context"] : null].filter(Boolean).join(" · ");
     return `
     <tr>
-      <td class="mono small" data-label="File" title="${esc(f.path)}">${esc(f.name)}
+      <td class="mono small wrap" data-label="File" title="${esc(f.path)}">${esc(f.name)}
         ${f.source === "ollama" ? '<span class="badge">ollama repo</span>' : ""}
         ${f.mmprojPath ? '<span class="badge ok" title="' + esc(f.mmprojPath) + '">+ vision (projector)</span>'
           : (f.meta && f.meta["hemera.vision"]) ? '<span class="badge warn" title="vision tower is inside the model file; no separate projector exists">+ vision (embedded)</span>' : ""}
@@ -265,7 +280,7 @@ async function renderModels(reuseScan) {
   const companions = (SCAN.files || []).filter(f => f.role !== "model");
   const compRows = companions.map((f, ci) => `
     <tr>
-      <td class="mono small" data-label="File" title="${esc(f.path)}">${esc(f.name)}</td>
+      <td class="mono small wrap" data-label="File" title="${esc(f.path)}">${esc(f.name)}</td>
       <td data-label="Type"><span class="badge warn">${esc(f.role)}</span></td>
       <td class="small" data-label="Size">${humanSize(f.size)}</td>
       <td data-label="Paired with">${(f.boundTo || []).map(u => `<span class="badge">${esc(u)}</span>`).join("")
@@ -274,6 +289,14 @@ async function renderModels(reuseScan) {
       <td class="actions">${f.source === "ollama"
         ? '<button class="btn danger xs" disabled title="managed by ollama">Delete file</button>'
         : `<button class="btn danger xs" data-delcomp="${ci}">Delete file</button>`}</td>
+    </tr>`).join("");
+
+  const comfyRows = ((COMFY && COMFY.models) || []).filter(m => m.ready).map(m => `
+    <tr>
+      <td class="mono" data-label="Name">${esc(m.id)}</td>
+      <td data-label="Makes"><span class="badge warn">${esc(m.kind)}</span></td>
+      <td data-label="Family">${esc(m.title)}</td>
+      <td class="small mono wrap" data-label="File">${esc(m.folder + "/" + m.file)}</td>
     </tr>`).join("");
 
   paint(el, `
@@ -291,6 +314,16 @@ async function renderModels(reuseScan) {
       to vary parameters. Models are reachable via all three APIs by name.
       <strong>Remove</strong> only deletes the configuration — the file on disk is kept.</p>
     </div>
+    ${comfyRows ? `<div class="card">
+      <h3>ComfyUI models</h3>
+      <div class="tablewrap"><table class="stack">
+        <thead><tr><th>Name</th><th>Makes</th><th>Family</th><th>File</th></tr></thead>
+        <tbody>${comfyRows}</tbody>
+      </table></div>
+      <p class="small muted">Found in ComfyUI and offered under these names, in <span class="mono">/v1/models</span>
+      like the ones above. Nothing to configure here: the list follows ComfyUI's model folders.
+      ComfyUI itself is set up in the <a href="#dirs">Directories</a> tab.</p>
+    </div>` : ""}
     <div class="card">
       <div class="row spread">
         <h3>Scanned model files</h3>
@@ -879,7 +912,9 @@ function renderDirs() {
       (multi-part models are grouped; mmproj/mtp companions detected).
       A directory containing <span class="mono">manifests/</span> + <span class="mono">blobs/</span>
       is read as an ollama repository — its models appear in the scan, and files inside it are never deleted by hemera.</p>
-    </div>`);
+    </div>
+    <div id="comfy"></div>`);
+  renderComfy();
   $("#dir-add").onclick = async () => {
     const v = $("#dir-new").value.trim();
     if (!v) return;
@@ -892,6 +927,83 @@ function renderDirs() {
   });
 }
 
+// ---------------------------------------------------------------- comfyui
+
+/**
+ * ComfyUI is pointed at rather than configured: hemera asks it what it has, so this card is
+ * two fields and a report of what came back.
+ */
+async function renderComfy(refresh) {
+  const el = $("#comfy");
+  if (!el) return;
+  const c = CONFIG.comfyui || {};
+  let st = null;
+  try { st = await GET("/hemera/api/comfyui" + (refresh ? "?refresh=1" : "")); } catch (e) { fail(e); }
+  if (!$("#comfy")) return;
+  const models = (st && st.models) || [];
+  const loose = (st && st.unassigned) || [];
+  const state = !st || !st.configured ? '<span class="badge">not configured</span>'
+    : st.reachable ? `<span class="badge ok">connected</span> <span class="small muted">ComfyUI ${esc(st.version || "")}${st.startedByHemera ? ", started by hemera" : ""}</span>`
+    : `<span class="badge danger">unreachable</span> <span class="small muted">${esc(st.error || "")}</span>`;
+  const rows = models.map(m => `<tr>
+      <td data-label="Model" class="mono">${esc(m.id)}</td>
+      <td data-label="Makes"><span class="badge warn">${esc(m.kind)}</span></td>
+      <td data-label="Family">${esc(m.title)}</td>
+      <td data-label="Status">${m.ready ? '<span class="badge ok">offered</span>'
+        : `<span class="badge danger">incomplete</span><div class="small muted">${m.problems.map(esc).join("<br>")}</div>`}</td>
+    </tr>`).join("");
+  const looseRows = loose.map((f, i) => `<tr>
+      <td data-label="File" class="mono">${esc(f.file)}</td>
+      <td data-label="Use as"><div class="row"><select data-comfy-recipe="${i}">
+        ${f.recipes.map(r => `<option>${esc(r)}</option>`).join("")}</select>
+        <button class="btn xs" data-comfy-assign="${i}">Assign</button>
+        <button class="btn xs" data-comfy-hide="${i}">Hide</button></div></td>
+    </tr>`).join("");
+  paint(el, `
+    <h2>ComfyUI</h2>
+    <div class="card">
+      <p class="small muted">Image, video and 3D models that live in a ComfyUI install. hemera asks ComfyUI which
+      model files and nodes it has and offers every model it has a workflow for — nothing is installed into ComfyUI,
+      and a file added to its folders appears here by itself.</p>
+      <div class="formgrid">
+        <div><label>ComfyUI folder (the one containing main.py) — hemera starts it when needed</label>
+          <input type="text" id="comfy-dir" class="mono" value="${esc(c.dir || "")}" placeholder="/path/to/ComfyUI"></div>
+        <div><label>URL (only if it runs elsewhere, or on another port)</label>
+          <input type="text" id="comfy-url" class="mono" value="${esc(c.url || "")}" placeholder="http://127.0.0.1:8188"></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" id="comfy-save">Save</button>
+        <button class="btn" id="comfy-refresh">Look again</button>
+        <span>${state}</span>
+      </div>
+      ${rows ? `<div class="tablewrap" style="margin-top:12px"><table class="stack">
+        <tr><th>Model</th><th>Makes</th><th>Family</th><th>Status</th></tr>${rows}</table></div>` : ""}
+      ${looseRows ? `<h3 style="margin-top:16px">Not recognised</h3>
+        <p class="small muted">Model files whose name matches no workflow. If one is a variant of a family hemera
+        knows, say which.</p>
+        <div class="tablewrap"><table class="stack"><tr><th>File</th><th>Use as</th></tr>${looseRows}</table></div>` : ""}
+    </div>`);
+  const save = async (msg) => {
+    try { await PUT("/hemera/api/config", CONFIG); toast(msg); renderComfy(true); } catch (e) { fail(e); }
+  };
+  $("#comfy-save").onclick = () => {
+    const dir = $("#comfy-dir").value.trim(), url = $("#comfy-url").value.trim();
+    const next = Object.assign({}, c);
+    if (dir) next.dir = dir; else delete next.dir;
+    if (url) next.url = url; else delete next.url;
+    if (Object.keys(next).length) CONFIG.comfyui = next; else delete CONFIG.comfyui;
+    save("ComfyUI settings saved");
+  };
+  $("#comfy-refresh").onclick = () => renderComfy(true);
+  const assign = (i, recipe) => {
+    CONFIG.comfyui = Object.assign({}, c, { assign: Object.assign({}, c.assign, { [loose[i].file]: recipe }) });
+    save(recipe === "-" ? "File hidden" : "File assigned");
+  };
+  $$("[data-comfy-assign]", el).forEach(b => b.onclick = () =>
+    assign(+b.dataset.comfyAssign, $(`[data-comfy-recipe="${b.dataset.comfyAssign}"]`, el).value));
+  $$("[data-comfy-hide]", el).forEach(b => b.onclick = () => assign(+b.dataset.comfyHide, "-"));
+}
+
 // ---------------------------------------------------------------- proxies
 
 // ---------------------------------------------------------------- images
@@ -902,7 +1014,8 @@ let IMG_STATE = { results: [], busy: false };
 
 function renderImages() {
   const el = $("#sec-images");
-  const models = (CONFIG.models || []).filter(m => isSdEngine(m.engine));
+  const models = (CONFIG.models || []).filter(m => isSdEngine(m.engine)).concat(
+    ((COMFY && COMFY.models) || []).filter(m => m.ready && m.kind === "image").map(m => ({ name: m.id })));
   if (!models.length) {
     paint(el, `<h2>Images</h2>
       <div class="card"><p>No image models configured yet.</p>

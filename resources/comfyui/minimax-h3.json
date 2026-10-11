@@ -1,0 +1,353 @@
+{
+ "id": "minimax-h3",
+ "title": "MiniMax H3",
+ "kind": "video",
+ "description": "Text, first-frame or first-and-last-frame to video with sound.",
+ "model": {
+  "folder": "diffusion_models",
+  "match": "(?i)max[-_ ]?h3.*\\.safetensors$",
+  "exclude": "(?i)vae|lora|encoder|turbo",
+  "set": [
+   "1.unet_name"
+  ]
+ },
+ "components": {
+  "text_encoder": {
+   "folder": "text_encoders",
+   "match": "(?i)qwen3.?vl.*minimax.*h3.*\\.safetensors$",
+   "set": [
+    "2.clip_name"
+   ]
+  },
+  "video_vae": {
+   "folder": "vae",
+   "match": "(?i)minimax.?h3.*video.?vae",
+   "set": [
+    "3.vae_name"
+   ]
+  },
+  "audio_vae": {
+   "folder": "vae",
+   "match": "(?i)minimax.?h3.*audio.?vae",
+   "set": [
+    "4.vae_name"
+   ]
+  },
+  "turbo_lora": {
+   "folder": "loras",
+   "match": "(?i)minimax.?h3.*turbo",
+   "set": [
+    "6.lora_name"
+   ],
+   "optional": true
+  }
+ },
+ "params": {
+  "prompt": {
+   "type": "string",
+   "required": true,
+   "set": [
+    "5.prompt"
+   ],
+   "description": "What happens in the clip, sound included."
+  },
+  "image": {
+   "type": "image",
+   "set": [
+    "20.image"
+   ],
+   "link": {
+    "5.first_frame": [
+     "20",
+     0
+    ]
+   },
+   "description": "Optional first frame."
+  },
+  "end_image": {
+   "type": "image",
+   "set": [
+    "21.image"
+   ],
+   "link": {
+    "5.last_frame": [
+     "21",
+     0
+    ]
+   },
+   "description": "Optional last frame."
+  },
+  "width": {
+   "type": "int",
+   "default": 768,
+   "min": 256,
+   "max": 1920,
+   "step": 32,
+   "set": [
+    "5.width"
+   ]
+  },
+  "height": {
+   "type": "int",
+   "default": 432,
+   "min": 256,
+   "max": 1088,
+   "step": 32,
+   "set": [
+    "5.height"
+   ]
+  },
+  "fps": {
+   "type": "int",
+   "default": 24,
+   "min": 24,
+   "max": 24,
+   "description": "Fixed: the model is trained at 24 fps."
+  },
+  "frames": {
+   "type": "int",
+   "default": 73,
+   "min": 22,
+   "max": 362,
+   "step": 17,
+   "offset": 5,
+   "description": "Length in frames (17n+5). Clients normally send 'seconds' instead.",
+   "set": [
+    "5.length"
+   ]
+  },
+  "turbo": {
+   "type": "bool",
+   "default": true,
+   "requires": "turbo_lora",
+   "description": "Use the 8-step turbo LoRA: several times faster, slightly less detail. Without it the model takes 20 steps.",
+   "apply": {
+    "true": {
+     "7.model": [
+      "6",
+      0
+     ],
+     "9.model": [
+      "6",
+      0
+     ],
+     "9.steps": 8
+    },
+    "false": {
+     "7.model": [
+      "1",
+      0
+     ],
+     "9.model": [
+      "1",
+      0
+     ],
+     "9.steps": 20
+    }
+   }
+  },
+  "steps": {
+   "type": "int",
+   "min": 1,
+   "max": 50,
+   "description": "Defaults to 8 with turbo and 20 without.",
+   "set": [
+    "9.steps"
+   ]
+  },
+  "seed": {
+   "type": "int",
+   "default": "random",
+   "min": 0,
+   "set": [
+    "10.noise_seed"
+   ]
+  }
+ },
+ "output": {
+  "node": "15"
+ },
+ "graph": {
+  "1": {
+   "class_type": "UNETLoader",
+   "inputs": {
+    "unet_name": "",
+    "weight_dtype": "default"
+   }
+  },
+  "2": {
+   "class_type": "CLIPLoader",
+   "inputs": {
+    "clip_name": "",
+    "type": "minimax",
+    "device": "default"
+   }
+  },
+  "3": {
+   "class_type": "VAELoader",
+   "inputs": {
+    "vae_name": ""
+   }
+  },
+  "4": {
+   "class_type": "VAELoader",
+   "inputs": {
+    "vae_name": ""
+   }
+  },
+  "5": {
+   "class_type": "MiniMaxH3ImageToVideo",
+   "inputs": {
+    "clip": [
+     "2",
+     0
+    ],
+    "vae": [
+     "3",
+     0
+    ],
+    "prompt": "",
+    "width": 768,
+    "height": 432,
+    "length": 73
+   }
+  },
+  "6": {
+   "class_type": "LoraLoaderModelOnly",
+   "inputs": {
+    "model": [
+     "1",
+     0
+    ],
+    "lora_name": "",
+    "strength_model": 1.0
+   }
+  },
+  "7": {
+   "class_type": "BasicGuider",
+   "inputs": {
+    "model": [
+     "1",
+     0
+    ],
+    "conditioning": [
+     "5",
+     0
+    ]
+   }
+  },
+  "8": {
+   "class_type": "KSamplerSelect",
+   "inputs": {
+    "sampler_name": "res_multistep"
+   }
+  },
+  "9": {
+   "class_type": "BasicScheduler",
+   "inputs": {
+    "model": [
+     "1",
+     0
+    ],
+    "scheduler": "simple",
+    "steps": 20,
+    "denoise": 1.0
+   }
+  },
+  "10": {
+   "class_type": "RandomNoise",
+   "inputs": {
+    "noise_seed": 0
+   }
+  },
+  "11": {
+   "class_type": "SamplerCustomAdvanced",
+   "inputs": {
+    "noise": [
+     "10",
+     0
+    ],
+    "guider": [
+     "7",
+     0
+    ],
+    "sampler": [
+     "8",
+     0
+    ],
+    "sigmas": [
+     "9",
+     0
+    ],
+    "latent_image": [
+     "5",
+     1
+    ]
+   }
+  },
+  "12": {
+   "class_type": "VAEDecode",
+   "inputs": {
+    "samples": [
+     "11",
+     0
+    ],
+    "vae": [
+     "3",
+     0
+    ]
+   }
+  },
+  "13": {
+   "class_type": "VAEDecodeAudio",
+   "inputs": {
+    "samples": [
+     "11",
+     0
+    ],
+    "vae": [
+     "4",
+     0
+    ]
+   }
+  },
+  "14": {
+   "class_type": "CreateVideo",
+   "inputs": {
+    "images": [
+     "12",
+     0
+    ],
+    "fps": 24.0,
+    "audio": [
+     "13",
+     0
+    ]
+   }
+  },
+  "15": {
+   "class_type": "SaveVideo",
+   "inputs": {
+    "video": [
+     "14",
+     0
+    ],
+    "filename_prefix": "hemera/video",
+    "format": "auto",
+    "codec": "auto"
+   }
+  },
+  "20": {
+   "class_type": "LoadImage",
+   "inputs": {
+    "image": ""
+   }
+  },
+  "21": {
+   "class_type": "LoadImage",
+   "inputs": {
+    "image": ""
+   }
+  }
+ }
+}

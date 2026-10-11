@@ -144,15 +144,15 @@ public final class EngineDownloader
 
       job.put("status", "extracting");
       String lower = assetName.toLowerCase();
-      try (InputStream is = new BufferedInputStream(Files.newInputStream(tmp), 1 << 16))
-      {
-        if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz"))
+      if (lower.endsWith(".zip"))
+        Tar.extractZip(tmp, destDir);
+      else if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz"))
+        try (InputStream is = new BufferedInputStream(Files.newInputStream(tmp), 1 << 16))
+        {
           Tar.extractTar(new GZIPInputStream(is, 1 << 16), destDir);
-        else if (lower.endsWith(".zip"))
-          Tar.extractZip(is, destDir);
-        else
-          throw new IOException("unsupported archive format: " + assetName);
-      }
+        }
+      else
+        throw new IOException("unsupported archive format: " + assetName);
     }
     finally
     {

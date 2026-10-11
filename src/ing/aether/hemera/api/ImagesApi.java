@@ -9,6 +9,7 @@ import java.util.Map;
 import com.sun.net.httpserver.HttpExchange;
 
 import ing.aether.hemera.Log;
+import ing.aether.hemera.comfy.ComfyBridge;
 import ing.aether.hemera.config.Config;
 import ing.aether.hemera.engine.Engines;
 import ing.aether.hemera.engine.Instance;
@@ -34,6 +35,7 @@ public final class ImagesApi
   private final InstanceManager im;
   private final ProxyDispatcher proxies;
   private final ImageJobs jobs;
+  private final ComfyBridge comfy;
 
   /** Optional client-chosen id for a request, so it can be cancelled before it has answered. */
   static final String REQUEST_ID_HEADER = "X-Hemera-Request-Id";
@@ -45,8 +47,9 @@ public final class ImagesApi
    */
   private static final long HEARTBEAT_MS = 1000;
 
-  public ImagesApi(Config cfg, InstanceManager im, ProxyDispatcher proxies, Router router)
+  public ImagesApi(Config cfg, InstanceManager im, ProxyDispatcher proxies, ComfyBridge comfy, Router router)
   {
+    this.comfy = comfy;
     this.cfg = cfg;
     this.im = im;
     this.proxies = proxies;
@@ -55,6 +58,9 @@ public final class ImagesApi
     router.add("POST", "/v1/images/edits", this::edits);
     router.add("GET", "/hemera/api/images/jobs", ex -> Router.sendJson(ex, 200, Json.map("jobs", jobs.list())));
     router.add("POST", "/hemera/api/images/cancel", this::cancel);
+    // video shares the per-model queue: one engine draws one thing at a time, whatever it is
+    new VideosApi(cfg, im, jobs, comfy, router);
+    new ThreeDApi(cfg, jobs, comfy, router);
   }
 
   // ---- generations (JSON) -------------------------------------------------
@@ -73,6 +79,12 @@ public final class ImagesApi
       proxies.openaiPassthrough(ex, proxy, body, "/images/generations");
       return;
     }
+    ComfyBridge.Offer offer = cfg.findModel(name) == null ? comfy.require(raw, "image") : null;
+    if (offer != null)
+    {
+      comfyGeneration(ex, offer, body);
+      return;
+    }
     Map<String, Object> model = localModel(name, raw);
     Map<String, Object> out = new LinkedHashMap<>(body);
     out.remove("model"); // sd-server serves whichever pipeline it was started with
@@ -87,6 +99,31 @@ public final class ImagesApi
       ImageJobs.checkpoint(j);
       return serve(inst, () -> Upstream.postJson(
           "http://127.0.0.1:" + inst.port + "/v1/images/generations", out, null));
+    });
+  }
+
+  /** The same request, for a model ComfyUI offers: a workflow run instead of an sd-server call. */
+  private void comfyGeneration(HttpExchange ex, ComfyBridge.Offer offer, Map<String, Object> body) throws Exception
+  {
+    Map<String, Object> req = new LinkedHashMap<>(body);
+    boolean stream = takeStream(req);
+    if (transparentRequested(req))
+      throw new HttpError(400, "background=transparent is not available for '" + offer.id() + "'");
+    String size = Json.str(req, "size", "auto");
+    ComfyBridge.openAiFields(req, offer.recipe());
+    comfy.check(offer, req);
+
+    ImageJobs.Job job = jobs.create(ex.getRequestHeaders().getFirst(REQUEST_ID_HEADER), offer.id(), "generation");
+    ComfyBridge.Run run = comfy.newRun();
+    job.onCancel = run::cancel;
+    respond(ex, job, stream, "image_generation", size, false, j -> {
+      ComfyBridge.Output out = comfy.execute(offer, req, run);
+      String name = out.filename();
+      return Json.map(
+          "created", System.currentTimeMillis() / 1000,
+          "output_format", name.substring(name.lastIndexOf('.') + 1),
+          "seed", run.used().get("seed"),
+          "data", List.of(Json.map("b64_json", Base64.getEncoder().encodeToString(comfy.fetch(out)))));
     });
   }
 
@@ -119,6 +156,8 @@ public final class ImagesApi
     String name = ProxyDispatcher.resolveName(cfg, raw);
     if (cfg.findProxy(name) != null)
       throw new HttpError(400, "image editing is not supported for proxied models yet");
+    if (cfg.findModel(name) == null && comfy.find(raw) != null)
+      throw new HttpError(400, "model '" + raw + "' cannot edit images");
     Map<String, Object> model = localModel(name, raw);
     fields.remove("model");
     boolean stream = takeStream(fields);

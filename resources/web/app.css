@@ -87,6 +87,11 @@ table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
 tr:last-child td { border-bottom: none; }
+/* Paths, hashes and argument lists have no spaces to break at, so one long value sets the column
+   width and pushes the action buttons out of the card, where they sit behind a sideways scroll
+   nobody notices. "anywhere" (unlike break-word) also lowers the column's minimum width, which is
+   what lets the table shrink to fit. */
+td.wrap { overflow-wrap: anywhere; }
 
 /* ---- controls ---- */
 .btn {

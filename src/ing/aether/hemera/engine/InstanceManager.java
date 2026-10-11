@@ -127,7 +127,7 @@ public final class InstanceManager
    */
   private static final java.util.Set<String> SD_COMPONENT_FLAGS = java.util.Set.of(
       "vae", "llm", "llm_vision", "t5xxl", "clip_l", "clip_g", "clip_vision", "qwen2vl",
-      "qwen2vl_vision", "tae", "taesd", "high-noise-diffusion-model", "uncond-diffusion-model");
+      "qwen2vl_vision", "tae", "taesd", "audio-vae", "embeddings-connectors", "high-noise-diffusion-model", "uncond-diffusion-model");
 
   private Instance start(Map<String, Object> model) throws Exception
   {

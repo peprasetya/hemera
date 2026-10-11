@@ -28,9 +28,12 @@ public final class OllamaApi
   private final InstanceManager im;
   private final ModelRegistry registry;
   private final ProxyDispatcher proxies;
+  private final ing.aether.hemera.comfy.ComfyBridge comfy;
 
-  public OllamaApi(Config cfg, InstanceManager im, ModelRegistry registry, ProxyDispatcher proxies, Router router)
+  public OllamaApi(Config cfg, InstanceManager im, ModelRegistry registry, ProxyDispatcher proxies,
+      ing.aether.hemera.comfy.ComfyBridge comfy, Router router)
   {
+    this.comfy = comfy;
     this.cfg = cfg;
     this.im = im;
     this.registry = registry;
@@ -76,9 +79,31 @@ public final class OllamaApi
           "modified_at", Dialects.now(), "size", 0, "digest", digest(name),
           "details", Json.map("parent_model", "", "format", "proxy",
               "family", Json.str(p, "type", "openai"), "families", List.of(Json.str(p, "type", "openai")),
-              "parameter_size", "remote", "quantization_level", "-")));
+              "parameter_size", "remote", "quantization_level", "-"),
+          "capabilities", List.of("completion", "tools")));
     }
+    for (ing.aether.hemera.comfy.ComfyBridge.Offer o : comfy.snapshot(false).offers())
+      if (o.ready())
+        models.add(comfyEntry(o));
     Router.sendJson(ex, 200, Json.map("models", models));
+  }
+
+  /**
+   * A model ComfyUI offers, in ollama's shape. Ollama has no notion of video or 3D, so those are
+   * said the way it says everything else about a model: as a capability. A client that only
+   * chats skips whatever lacks "completion"; one that knows hemera reads the "hemera" object,
+   * the same one /v1/models carries.
+   */
+  private static Map<String, Object> comfyEntry(ing.aether.hemera.comfy.ComfyBridge.Offer o)
+  {
+    String family = o.recipe().id;
+    return Json.map("name", o.id(), "model", o.id(), "modified_at", Dialects.now(), "size", 0,
+        "digest", digest(o.id()),
+        "details", Json.map("parent_model", "", "format", "comfyui",
+            "family", family, "families", List.of(family),
+            "parameter_size", "unknown", "quantization_level", "unknown"),
+        "capabilities", List.of(o.recipe().kind),
+        "hemera", ing.aether.hemera.comfy.ComfyBridge.describe(o));
   }
 
   private Map<String, Object> tagEntry(Map<String, Object> m)
@@ -104,10 +129,24 @@ public final class OllamaApi
     String arch = Json.str(meta, "hemera.arch", "unknown");
     return Json.map("name", name, "model", name, "modified_at", modified, "size", size,
         "digest", digest(name),
+        "capabilities", capabilities(m, meta),
         "details", Json.map("parent_model", "", "format", "gguf",
             "family", arch, "families", List.of(arch),
             "parameter_size", Json.str(meta, "hemera.params", "unknown"),
             "quantization_level", Json.str(meta, "hemera.quant", "unknown")));
+  }
+
+  /** Ollama's capability words, plus "image" for the models sd.cpp serves. */
+  private List<Object> capabilities(Map<String, Object> m, Map<String, Object> meta)
+  {
+    if (ing.aether.hemera.engine.Engines.isImageModel(cfg, m))
+      return new ArrayList<>(List.of("image"));
+    List<Object> caps = new ArrayList<>(List.of("completion", "tools"));
+    if (!Json.str(m, "mmproj", "").isEmpty() || Json.bool(meta, "hemera.vision", false))
+      caps.add("vision");
+    if (Json.bool(meta, "hemera.audio", false))
+      caps.add("audio");
+    return caps;
   }
 
   private void ps(HttpExchange ex) throws Exception
@@ -154,6 +193,19 @@ public final class OllamaApi
       return;
     }
     Map<String, Object> m = cfg.findModel(name);
+    ing.aether.hemera.comfy.ComfyBridge.Offer offer = m == null ? comfy.find(name) : null;
+    if (offer != null)
+    {
+      Map<String, Object> entry = comfyEntry(offer);
+      Router.sendJson(ex, 200, Json.map(
+          "modelfile", "# offered from ComfyUI\n# file: " + offer.recipe().modelFolder + "/" + offer.file() + "\n",
+          "parameters", "", "template", "",
+          "details", entry.get("details"),
+          "model_info", Json.map("comfyui.components", offer.components()),
+          "capabilities", entry.get("capabilities"),
+          "hemera", entry.get("hemera")));
+      return;
+    }
     if (m == null)
       throw new HttpError(404, "model '" + name + "' not found");
     Map<String, Object> meta = Json.map();
@@ -161,11 +213,7 @@ public final class OllamaApi
     if (!file.isEmpty())
       meta = GgufReader.read(Path.of(file));
     String arch = Json.str(meta, "hemera.arch", "unknown");
-    List<Object> caps = new ArrayList<>(List.of("completion", "tools"));
-    if (!Json.str(m, "mmproj", "").isEmpty() || Json.bool(meta, "hemera.vision", false))
-      caps.add("vision");
-    if (Json.bool(meta, "hemera.audio", false))
-      caps.add("audio");
+    List<Object> caps = capabilities(m, meta);
     Router.sendJson(ex, 200, Json.map(
         "modelfile", "# managed by hemera\n# file: " + file + "\n",
         "parameters", String.join(" ", Json.strList(m, "args")),
@@ -372,7 +420,10 @@ public final class OllamaApi
   {
     Map<String, Object> model = cfg.findModel(name);
     if (model == null)
-      throw new HttpError(404, "model '" + raw + "' not found — configure it in the web UI (/configure/)");
+      throw comfy.find(raw) != null
+          ? new HttpError(400, "model '" + raw + "' is not a text model — use "
+              + ing.aether.hemera.comfy.ComfyBridge.endpoint(comfy.find(raw).recipe().kind))
+          : new HttpError(404, "model '" + raw + "' not found — configure it in the web UI (/configure/)");
     ing.aether.hemera.engine.Engines.requireTextModel(cfg, model);
     return model;
   }

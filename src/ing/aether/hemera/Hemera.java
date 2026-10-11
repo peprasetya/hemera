@@ -8,6 +8,7 @@ import ing.aether.hemera.api.ImagesApi;
 import ing.aether.hemera.api.OllamaApi;
 import ing.aether.hemera.api.OpenAiApi;
 import ing.aether.hemera.api.ProxyDispatcher;
+import ing.aether.hemera.comfy.ComfyBridge;
 import ing.aether.hemera.config.Config;
 import ing.aether.hemera.engine.InstanceManager;
 import ing.aether.hemera.http.Router;
@@ -77,6 +78,7 @@ public final class Hemera
     InstanceManager im = new InstanceManager(cfg);
     ModelRegistry registry = new ModelRegistry(cfg, im);
     ProxyDispatcher proxies = new ProxyDispatcher(cfg);
+    ComfyBridge comfy = new ComfyBridge(cfg);
 
     Router router = new Router();
     // Root: ollama clients probe "GET /" for the plain-text banner; browsers get the UI.
@@ -87,11 +89,11 @@ public final class Hemera
       else
         Router.sendText(ex, 200, "Ollama is running", "text/plain");
     });
-    new OllamaApi(cfg, im, registry, proxies, router);
-    new OpenAiApi(cfg, im, proxies, router);
-    new ImagesApi(cfg, im, proxies, router);
+    new OllamaApi(cfg, im, registry, proxies, comfy, router);
+    new OpenAiApi(cfg, im, proxies, comfy, router);
+    new ImagesApi(cfg, im, proxies, comfy, router);
     new ClaudeApi(cfg, im, proxies, router);
-    new AdminApi(cfg, im, registry, router);
+    new AdminApi(cfg, im, registry, comfy, router);
     new StaticFiles(router);
 
     router.start(port);

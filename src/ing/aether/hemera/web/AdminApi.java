@@ -13,6 +13,7 @@ import com.sun.net.httpserver.HttpExchange;
 
 import ing.aether.hemera.Hemera;
 import ing.aether.hemera.Log;
+import ing.aether.hemera.comfy.ComfyBridge;
 import ing.aether.hemera.config.Config;
 import ing.aether.hemera.engine.EngineDownloader;
 import ing.aether.hemera.engine.Engines;
@@ -31,10 +32,12 @@ public final class AdminApi
   private final Config cfg;
   private final InstanceManager im;
   private final ModelRegistry registry;
+  private final ComfyBridge comfy;
   private final long startedAt = System.currentTimeMillis();
 
-  public AdminApi(Config cfg, InstanceManager im, ModelRegistry registry, Router router)
+  public AdminApi(Config cfg, InstanceManager im, ModelRegistry registry, ComfyBridge comfy, Router router)
   {
+    this.comfy = comfy;
     this.cfg = cfg;
     this.im = im;
     this.registry = registry;
@@ -55,6 +58,8 @@ public final class AdminApi
     router.add("POST", "/hemera/api/models/load", this::loadModel);
     router.add("POST", "/hemera/api/models/stop", this::stopModel);
     router.add("POST", "/hemera/api/loglevel", this::logLevel);
+    router.add("GET", "/hemera/api/comfyui",
+        ex -> Router.sendJson(ex, 200, comfy.status("1".equals(Router.query(ex, "refresh")))));
   }
 
   private void status(HttpExchange ex) throws Exception
@@ -89,6 +94,7 @@ public final class AdminApi
     cfg.replace(body);
     Log.setLevel(cfg.logLevel());
     LibraryResolver.clearCache();
+    comfy.invalidate();
     Log.info("admin", "Configuration replaced via web UI");
     Router.sendJson(ex, 200, Json.map("status", "ok",
         "note", "port changes take effect after restart"));

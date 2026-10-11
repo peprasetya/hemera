@@ -86,17 +86,36 @@ public final class Tar
     }
   }
 
-  public static void extractZip(InputStream in, Path dest) throws IOException
+  /**
+   * Extract a zip, honouring the Unix symlinks and permissions recorded in it. Those live only in
+   * the central directory at the end of the file, which a streaming reader never sees — so a
+   * release that ships libfoo.so.3 as a link used to come out as a 19-byte text file holding the
+   * link's target, and the engine died with "file too short".
+   */
+  public static void extractZip(Path zipFile, Path dest) throws IOException
   {
-    try (ZipInputStream zis = new ZipInputStream(in))
+    java.util.Map<String, Integer> modes = unixModes(zipFile);
+    try (ZipInputStream zis = new ZipInputStream(new java.io.BufferedInputStream(Files.newInputStream(zipFile), 1 << 16)))
     {
       ZipEntry entry;
       while ((entry = zis.getNextEntry()) != null)
       {
         Path target = safeResolve(dest, entry.getName());
+        int mode = modes.getOrDefault(entry.getName(), 0);
         if (entry.isDirectory())
         {
           Files.createDirectories(target);
+        }
+        else if ((mode & 0170000) == 0120000)
+        {
+          // a symlink's "content" is its target path
+          String link = new String(zis.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+          Path resolved = target.getParent().resolve(link).normalize();
+          if (!resolved.startsWith(dest))
+            throw new IOException("archive symlink escapes destination: " + entry.getName() + " -> " + link);
+          Files.createDirectories(target.getParent());
+          Files.deleteIfExists(target);
+          Files.createSymbolicLink(target, Path.of(link));
         }
         else
         {
@@ -105,10 +124,60 @@ public final class Tar
           {
             zis.transferTo(os);
           }
+          if ((mode & 0111) != 0)
+            target.toFile().setExecutable(true, false);
         }
         zis.closeEntry();
       }
     }
+  }
+
+  /**
+   * Entry name -> Unix mode, read from the zip's central directory. Empty when the archive was
+   * not written on Unix or is laid out in a way this does not read (zip64), in which case
+   * everything is extracted as a plain file, as before.
+   */
+  private static java.util.Map<String, Integer> unixModes(Path zipFile) throws IOException
+  {
+    java.util.Map<String, Integer> modes = new java.util.HashMap<>();
+    try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(zipFile))
+    {
+      long size = ch.size();
+      int tailLen = (int) Math.min(size, 65557);
+      java.nio.ByteBuffer tail = java.nio.ByteBuffer.allocate(tailLen).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+      ch.read(tail, size - tailLen);
+      int eocd = -1;
+      for (int i = tailLen - 22; i >= 0; i--)
+        if (tail.getInt(i) == 0x06054b50)
+        {
+          eocd = i;
+          break;
+        }
+      if (eocd < 0)
+        return modes;
+      long cdSize = tail.getInt(eocd + 12) & 0xFFFFFFFFL;
+      long cdOffset = tail.getInt(eocd + 16) & 0xFFFFFFFFL;
+      if (cdOffset == 0xFFFFFFFFL || cdSize > Integer.MAX_VALUE || cdOffset + cdSize > size)
+        return modes;
+      java.nio.ByteBuffer cd = java.nio.ByteBuffer.allocate((int) cdSize).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+      ch.read(cd, cdOffset);
+      int pos = 0;
+      while (pos + 46 <= cd.capacity() && cd.getInt(pos) == 0x02014b50)
+      {
+        int madeBy = cd.getShort(pos + 4) & 0xFFFF;
+        int nameLen = cd.getShort(pos + 28) & 0xFFFF;
+        int extraLen = cd.getShort(pos + 30) & 0xFFFF;
+        int commentLen = cd.getShort(pos + 32) & 0xFFFF;
+        int external = cd.getInt(pos + 38);
+        byte[] name = new byte[nameLen];
+        cd.position(pos + 46);
+        cd.get(name);
+        if (madeBy >> 8 == 3) // host system 3 = Unix: the high 16 bits are st_mode
+          modes.put(new String(name, java.nio.charset.StandardCharsets.UTF_8), external >>> 16);
+        pos += 46 + nameLen + extraLen + commentLen;
+      }
+    }
+    return modes;
   }
 
   // ---- helpers ------------------------------------------------------------

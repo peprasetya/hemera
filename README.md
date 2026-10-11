@@ -159,7 +159,8 @@ editable under Settings; `libraryAutoDetect: false` turns the search off entirel
 | Dialect | Endpoints |
 |---|---|
 | Ollama | `/api/tags` `/api/ps` `/api/show` `/api/chat` `/api/generate` `/api/embed` `/api/delete` `/api/stop` `/api/version` |
-| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` |
+| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` |
+| hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint; see [docs/media-api.md](docs/media-api.md)) |
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
 
 The ollama CLI works unchanged: `OLLAMA_HOST=host:12434 ollama list / ps / run / stop / rm`.
@@ -250,6 +251,93 @@ on the next image, from page cache — and hemera queues image requests itself, 
 only the cancelled job is ever inside the engine: a request still waiting just leaves the queue,
 and nobody else's work is lost.
 
+### Video
+
+Video models (LTX, Wan, ...) run on the same `sd.cpp` engine and are driven in the shape of
+OpenAI's Videos API. A clip takes minutes, so it is a job rather than one long request:
+
+```bash
+curl http://host:12434/v1/videos -H 'Content-Type: application/json' -d '{
+  "model": "ltx-2.5", "prompt": "a red convertible on a coastal road at sunset",
+  "size": "1280x720", "seconds": 5, "steps": 8 }'          # -> {"id":"video_...","status":"queued"}
+curl http://host:12434/v1/videos/video_...                  # queued | in_progress | completed | failed
+curl http://host:12434/v1/videos/video_.../content -o clip.webm
+curl -X DELETE http://host:12434/v1/videos/video_...        # cancel, or discard a finished one
+```
+
+`input_reference` (or `image`) is the start frame for image-to-video and `end_image` the last
+one, as base64 or an uploaded file. `fps`, `frames`, `seed`, `cfg_scale`, `sampler`,
+`negative_prompt` and `output_format` (`webm`, `webp`, `avi`) are accepted, and
+`sd_cpp_extra_args` passes anything else in sd.cpp's native `vid_gen` schema. Finished videos
+are held in memory for two hours. Jobs share the per-model queue with image requests, and
+deleting a running one frees the GPU the same way cancelling an image does.
+
+## ComfyUI (image, video and 3D models)
+
+Some models only run as a ComfyUI workflow — the 3D ones, and video models newer than
+stable-diffusion.cpp supports. hemera does not replace ComfyUI for these; it fronts it. Tell it
+where ComfyUI is, in the Directories tab or in `hemera.json`:
+
+```jsonc
+"comfyui": {
+  "dir": "/opt/ComfyUI",            // the folder with main.py: hemera starts it when needed
+  "url": "http://127.0.0.1:8188"    // or just this, for a ComfyUI that is already running somewhere
+}
+```
+
+That is the whole setup. Nothing is installed into ComfyUI and none of its files are touched.
+hemera asks it, over the same HTTP API its own page uses, which model files and which nodes it
+has, and every model it knows a workflow for appears in `/v1/models` under the name of its file:
+
+```bash
+curl -s http://host:12434/v1/models | jq -r '.data[] | select(.owned_by=="comfyui") | "\(.hemera.kind)\t\(.id)"'
+3d      trellis_2_int8_convrot
+3d      pixal3d_int8_convrot
+3d      hunyuan_3d_v2.1
+video   ltx25_uncensored_v1.1-fp8
+video   Omoda_v1.5_MiniMaxH3_fl2va_int8_pruned
+image   qwen-image-bf16
+```
+
+The list follows ComfyUI: drop another file into its `diffusion_models` folder (or any folder
+its `extra_model_paths.yaml` names) and it is offered within half a minute; remove one and it is
+gone. Image models answer on `/v1/images/generations`, video models on `/v1/videos`, exactly
+like the sd.cpp ones, and 3D models on an endpoint of hemera's own:
+
+```bash
+curl http://host:12434/v1/3d/generations -F model=trellis_2_int8_convrot -F image=@teapot.png
+                                                             # -> {"id":"3d_...","status":"queued"}
+curl http://host:12434/v1/3d/generations/3d_...             # queued | in_progress (progress 0-100) | completed
+curl http://host:12434/v1/3d/generations/3d_.../content -o teapot.glb
+curl -X DELETE http://host:12434/v1/3d/generations/3d_...   # cancel, or discard
+```
+
+The full contract for client authors — discovery, every field, the job objects — is in
+[docs/media-api.md](docs/media-api.md).
+
+**Recipes.** What turns a file into a model is a *recipe*: a small JSON document naming the files
+a family needs (by pattern, per ComfyUI folder), the request parameters and where each lands, and
+the workflow itself in ComfyUI's API format. Built-in recipes cover TRELLIS.2, Pixal3D,
+Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain, and turbo-merged checkpoints) and Qwen-Image; they are
+the files in [resources/comfyui/](resources/comfyui/). A file `<home>/comfyui/<name>.json` adds a
+family, or replaces the built-in of the same `id`, with no rebuild — export a workflow from
+ComfyUI with *Save (API format)*, wrap it the way the built-ins are wrapped, and the next look
+picks it up. A model is offered only when ComfyUI has every file and node its recipe needs; the
+Directories tab says what is missing otherwise.
+
+Community checkpoints rarely follow a naming scheme, so a file no pattern recognises is listed
+under *Not recognised*, where it can be assigned to a family by hand (stored as
+`comfyui.assign: {"file.safetensors": "minimax-h3"}`) or hidden.
+
+**Memory.** ComfyUI keeps its last models loaded. On a machine it shares with language models
+that is memory they cannot use, so after `comfyui.keepAliveSeconds` (default 300, `-1` never) of
+no jobs hemera asks it to unload. Results are written to `output/hemera/` and uploads to
+`input/hemera/` inside ComfyUI; hemera never deletes there, so clear them out now and then.
+
+Other keys: `python` (interpreter, when ComfyUI's virtualenv is not `venv/` or `.venv/` in or
+beside its folder), `args` (extra arguments for `main.py`), `env`, `autoStart` (default `true`:
+start with hemera rather than at the first request).
+
 ## Configuration
 
 Everything is one JSON document (`hemera.json`), editable in the UI or by hand:
@@ -337,8 +425,11 @@ src/ing/aether/hemera/
                        process supervision
   model/               directory scanning, GGUF metadata, safe deletion
   api/                 Ollama / OpenAI / Anthropic dialects, translation, proxying
+  comfy/               the ComfyUI bridge: discovery, recipes, running workflows
   web/                 admin endpoints + embedded UI
 resources/web/         index.html, app.css, app.js
+resources/comfyui/     built-in recipes, one per model family
+docs/media-api.md      the image / video / 3D contract for client authors
 ```
 
 ## License

@@ -1,0 +1,209 @@
+{
+ "id": "qwen-image",
+ "title": "Qwen-Image",
+ "kind": "image",
+ "description": "Text to image with the original 20B Qwen-Image; strong at text inside images.",
+ "model": {
+  "folder": "diffusion_models",
+  "match": "(?i)^qwen[-_]?image.*\\.safetensors$",
+  "exclude": "(?i)edit|layered|vae|lora|2\\.[0-9]",
+  "set": [
+   "1.unet_name"
+  ]
+ },
+ "components": {
+  "text_encoder": {
+   "folder": "text_encoders",
+   "match": "(?i)qwen.?2\\.?5.?vl.?7b.*\\.safetensors$",
+   "set": [
+    "2.clip_name"
+   ]
+  },
+  "vae": {
+   "folder": "vae",
+   "match": [
+    "(?i)^qwen.?image.?vae.*comfy",
+    "(?i)^qwen_image_vae"
+   ],
+   "set": [
+    "3.vae_name"
+   ]
+  }
+ },
+ "params": {
+  "prompt": {
+   "type": "string",
+   "required": true,
+   "set": [
+    "6.text"
+   ]
+  },
+  "negative_prompt": {
+   "type": "string",
+   "default": "",
+   "set": [
+    "7.text"
+   ]
+  },
+  "width": {
+   "type": "int",
+   "default": 1024,
+   "min": 256,
+   "max": 2048,
+   "step": 16,
+   "set": [
+    "5.width"
+   ]
+  },
+  "height": {
+   "type": "int",
+   "default": 1024,
+   "min": 256,
+   "max": 2048,
+   "step": 16,
+   "set": [
+    "5.height"
+   ]
+  },
+  "steps": {
+   "type": "int",
+   "default": 20,
+   "min": 1,
+   "max": 100,
+   "set": [
+    "8.steps"
+   ]
+  },
+  "cfg_scale": {
+   "type": "number",
+   "default": 4.0,
+   "min": 1,
+   "max": 15,
+   "set": [
+    "8.cfg"
+   ]
+  },
+  "seed": {
+   "type": "int",
+   "default": "random",
+   "min": 0,
+   "set": [
+    "8.seed"
+   ]
+  }
+ },
+ "output": {
+  "node": "10"
+ },
+ "graph": {
+  "1": {
+   "class_type": "UNETLoader",
+   "inputs": {
+    "unet_name": "",
+    "weight_dtype": "default"
+   }
+  },
+  "2": {
+   "class_type": "CLIPLoader",
+   "inputs": {
+    "clip_name": "",
+    "type": "qwen_image",
+    "device": "default"
+   }
+  },
+  "3": {
+   "class_type": "VAELoader",
+   "inputs": {
+    "vae_name": ""
+   }
+  },
+  "4": {
+   "class_type": "ModelSamplingAuraFlow",
+   "inputs": {
+    "model": [
+     "1",
+     0
+    ],
+    "shift": 3.1
+   }
+  },
+  "5": {
+   "class_type": "EmptySD3LatentImage",
+   "inputs": {
+    "width": 1024,
+    "height": 1024,
+    "batch_size": 1
+   }
+  },
+  "6": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "clip": [
+     "2",
+     0
+    ],
+    "text": ""
+   }
+  },
+  "7": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "clip": [
+     "2",
+     0
+    ],
+    "text": ""
+   }
+  },
+  "8": {
+   "class_type": "KSampler",
+   "inputs": {
+    "model": [
+     "4",
+     0
+    ],
+    "seed": 0,
+    "steps": 20,
+    "cfg": 4.0,
+    "sampler_name": "euler",
+    "scheduler": "simple",
+    "positive": [
+     "6",
+     0
+    ],
+    "negative": [
+     "7",
+     0
+    ],
+    "latent_image": [
+     "5",
+     0
+    ],
+    "denoise": 1.0
+   }
+  },
+  "9": {
+   "class_type": "VAEDecode",
+   "inputs": {
+    "samples": [
+     "8",
+     0
+    ],
+    "vae": [
+     "3",
+     0
+    ]
+   }
+  },
+  "10": {
+   "class_type": "SaveImage",
+   "inputs": {
+    "images": [
+     "9",
+     0
+    ],
+    "filename_prefix": "hemera/image"
+   }
+  }
+ }
+}

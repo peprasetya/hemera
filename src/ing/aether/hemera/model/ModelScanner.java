@@ -259,6 +259,9 @@ public final class ModelScanner
     String parent = p.getParent() == null ? "" : p.getParent().getFileName().toString().toLowerCase(java.util.Locale.ROOT);
     if (name.contains("mmproj"))
       return "llm_vision";
+    // a video model's sound track has a VAE of its own, passed separately from the picture's
+    if (name.contains("audio") && (name.contains("vae") || parent.equals("vae")))
+      return "audio-vae";
     if (name.contains("vae") || parent.equals("vae"))
       return "vae";
     if (name.contains("clip_l"))

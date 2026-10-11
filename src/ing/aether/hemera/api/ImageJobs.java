@@ -38,6 +38,8 @@ final class ImageJobs
     private long startedAt;
     private boolean running;
     private boolean cancelled;
+    /** How to stop this job once it is running, for work that is not inside an engine hemera owns. */
+    volatile Runnable onCancel;
 
     Job(String id, String model, String kind)
     {
@@ -139,7 +141,12 @@ final class ImageJobs
       job.cancelled = true;
       stopEngine = job.running;
     }
-    if (stopEngine)
+    if (stopEngine && job.onCancel != null)
+    {
+      Log.info("images", "Cancelling '" + job.id + "' on '" + job.model + "' (" + why + ")");
+      job.onCancel.run();
+    }
+    else if (stopEngine)
     {
       Log.info("images", "Cancelling '" + job.id + "' on '" + job.model + "' (" + why + ") — stopping its"
           + " engine, since sd-server cannot interrupt a generation; it restarts on the next request");

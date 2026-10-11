@@ -1,0 +1,182 @@
+{
+ "id": "hunyuan3d-2.1",
+ "title": "Hunyuan3D 2.1",
+ "kind": "3d",
+ "description": "Image to 3D mesh, geometry only (no colour). The fastest of the three families and good at overall shape; give it an image whose background is already plain.",
+ "model": {
+  "folder": "checkpoints",
+  "match": "(?i)hunyuan.?3d.*2\\.1.*\\.safetensors$",
+  "set": [
+   "1.ckpt_name"
+  ]
+ },
+ "components": {},
+ "params": {
+  "image": {
+   "type": "image",
+   "required": true,
+   "set": [
+    "2.image"
+   ],
+   "description": "The object to model, on a plain background."
+  },
+  "steps": {
+   "type": "int",
+   "default": 30,
+   "min": 5,
+   "max": 100,
+   "set": [
+    "7.steps"
+   ]
+  },
+  "cfg_scale": {
+   "type": "number",
+   "default": 5.0,
+   "min": 1,
+   "max": 15,
+   "set": [
+    "7.cfg"
+   ]
+  },
+  "resolution": {
+   "type": "int",
+   "default": 256,
+   "min": 128,
+   "max": 512,
+   "step": 64,
+   "description": "Octree resolution of the surface extraction; higher is finer and slower.",
+   "set": [
+    "8.octree_resolution"
+   ]
+  },
+  "seed": {
+   "type": "int",
+   "default": "random",
+   "min": 0,
+   "set": [
+    "7.seed"
+   ]
+  }
+ },
+ "output": {
+  "node": "10"
+ },
+ "graph": {
+  "1": {
+   "class_type": "ImageOnlyCheckpointLoader",
+   "inputs": {
+    "ckpt_name": ""
+   }
+  },
+  "2": {
+   "class_type": "LoadImage",
+   "inputs": {
+    "image": ""
+   }
+  },
+  "3": {
+   "class_type": "ModelSamplingAuraFlow",
+   "inputs": {
+    "model": [
+     "1",
+     0
+    ],
+    "shift": 1,
+    "sampling": "flow"
+   }
+  },
+  "4": {
+   "class_type": "EmptyLatentHunyuan3Dv2",
+   "inputs": {
+    "resolution": 4096,
+    "batch_size": 1
+   }
+  },
+  "6": {
+   "class_type": "Hunyuan3Dv2Conditioning",
+   "inputs": {
+    "clip_vision_output": [
+     "13",
+     0
+    ]
+   }
+  },
+  "7": {
+   "class_type": "KSampler",
+   "inputs": {
+    "model": [
+     "3",
+     0
+    ],
+    "seed": 0,
+    "steps": 30,
+    "cfg": 5,
+    "sampler_name": "euler",
+    "scheduler": "normal",
+    "positive": [
+     "6",
+     0
+    ],
+    "negative": [
+     "6",
+     1
+    ],
+    "latent_image": [
+     "4",
+     0
+    ],
+    "denoise": 1
+   }
+  },
+  "8": {
+   "class_type": "VAEDecodeHunyuan3D",
+   "inputs": {
+    "samples": [
+     "7",
+     0
+    ],
+    "vae": [
+     "1",
+     2
+    ],
+    "num_chunks": 8000,
+    "octree_resolution": 256
+   }
+  },
+  "9": {
+   "class_type": "VoxelToMesh",
+   "inputs": {
+    "voxel": [
+     "8",
+     0
+    ],
+    "algorithm": "surface net",
+    "threshold": 0.6
+   }
+  },
+  "10": {
+   "class_type": "SaveGLB",
+   "inputs": {
+    "mesh": [
+     "9",
+     0
+    ],
+    "filename_prefix": "hemera/3d"
+   }
+  },
+  "13": {
+   "class_type": "CLIPVisionEncode",
+   "inputs": {
+    "clip_vision": [
+     "1",
+     1
+    ],
+    "image": [
+     "2",
+     0
+    ],
+    "crop": "center"
+   }
+  }
+ }
+}
