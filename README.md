@@ -23,12 +23,20 @@ Most wrappers pin one binary and hide it. Hemera does the opposite:
   tool in the stack — the `ollama` CLI, OpenAI SDKs, Claude Code — talks to the same models.
 - **Remote models look local.** DeepSeek, OpenAI, Gemini, and Claude can be routed as ordinary
   model names alongside your local ones.
+- **Not only text.** Images and video through stable-diffusion.cpp, and — by fronting a ComfyUI
+  install — the image, video and 3D models that only exist as ComfyUI workflows. They are all
+  just model names in the same list, each saying what it makes and which endpoint to call.
 
-The engine layer is deliberately generic: llama.cpp today, with
-[ds4](https://github.com/antirez/ds4) already pluggable, and vLLM or stable-diffusion.cpp to follow.
+The engine layer is deliberately generic: llama.cpp and stable-diffusion.cpp are managed
+release by release, [ds4](https://github.com/antirez/ds4) and other servers plug in as a binary
+path, and ComfyUI is bridged rather than managed.
+
+Hemera is a router, not an application: it has no gallery, no chat window and no viewer beyond
+what configuring it needs. Applications such as [aether.ing](https://aether.ing) sit on top and
+discover what a hemera server offers through its API.
 
 Zero dependencies: no Maven, no Gradle, no frameworks, no web server library — just a JDK 21+ and
-one 112 KB jar you can drop on any machine.
+one jar of about 240 KB you can drop on any machine.
 
 ## Build & run
 
@@ -59,12 +67,16 @@ third-party assets, follows your OS light/dark theme, works on phone and desktop
   several named variants with different args, environment, and engine pins. **Load** starts a
   model immediately instead of waiting for the first API request — useful for warming a large
   model or for checking that a new configuration actually runs; the load happens in the
-  background and its progress, or its error, is reported as it goes.
+  background and its progress, or its error, is reported as it goes. Models found in ComfyUI
+  are listed here too, read-only: there is nothing to configure about them.
 - **Engines** — installed versions/variants showing which models use each binary, whether the GPU
   runtime each build needs was actually found, a GitHub release browser filtered to your tracked
   variants, download progress, and the full rollback history. **Add engine** registers a binary you
   installed yourself, such as ds4.
-- **Directories** — model search paths, including ollama repositories.
+- **Images** — try an image model without writing a curl command: generate, edit with
+  reference images, stop a generation.
+- **Directories** — model search paths, including ollama repositories, and where ComfyUI is:
+  what hemera found there, which models it offers from it, and what is missing for the rest.
 - **Proxies** — external providers exposed as local model names.
 - **Settings** — port, log level, keep-alive, per-engine default arguments.
 
@@ -162,6 +174,15 @@ editable under Settings; `libraryAutoDetect: false` turns the search off entirel
 | OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` |
 | hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint; see [docs/media-api.md](docs/media-api.md)) |
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
+
+**What is each model for?** A server now holds chat models next to image, video and 3D ones, and
+neither OpenAI's nor Ollama's model list has a field for that, so hemera adds one to each, in
+that dialect's own style. `/v1/models` entries carry a `hemera` object — `kind` (`text`, `image`,
+`video`, `3d`), the `endpoint` to call, and for ComfyUI models their request `parameters`, enough
+to generate a form. `/api/tags` and `/api/show` carry Ollama's `capabilities` list, with `image`,
+`video` and `3d` added to its `completion` / `tools` / `vision`: a chat client offers the models
+that have `completion` and ignores the rest. Asking a model for the wrong thing is answered with
+the endpoint that would have worked. [docs/media-api.md](docs/media-api.md) spells all of it out.
 
 The ollama CLI works unchanged: `OLLAMA_HOST=host:12434 ollama list / ps / run / stop / rm`.
 Unlike upstream ollama, `ollama rm` (and **Remove** in the UI) only drops the configuration —
@@ -272,6 +293,10 @@ one, as base64 or an uploaded file. `fps`, `frames`, `seed`, `cfg_scale`, `sampl
 are held in memory for two hours. Jobs share the per-model queue with image requests, and
 deleting a running one frees the GPU the same way cancelling an image does.
 
+The same endpoint serves the video models ComfyUI offers (next section), which is where newer
+ones run when stable-diffusion.cpp cannot load them yet. Those return `video/mp4` with a
+soundtrack and report real `progress`.
+
 ## ComfyUI (image, video and 3D models)
 
 Some models only run as a ComfyUI workflow — the 3D ones, and video models newer than
@@ -350,6 +375,11 @@ Everything is one JSON document (`hemera.json`), editable in the UI or by hand:
   "loadTimeoutSeconds": 600,
   "modelDirs": ["/srv/models/gguf", "/usr/share/ollama/.ollama/models"],
   "librarySearchRoots": [],         // extra globs for GPU runtimes; built-ins cover the usual paths
+  "comfyui": {                      // optional; see ComfyUI above
+    "dir": "/opt/ComfyUI",          // hemera starts it from here; or "url" for one already running
+    "keepAliveSeconds": 300,        // idle time before it is asked to unload its models
+    "assign": {}                    // file name -> recipe id, for files no pattern recognises
+  },
   "engines": {
     "llama.cpp": {
       "repo": "ggml-org/llama.cpp",
