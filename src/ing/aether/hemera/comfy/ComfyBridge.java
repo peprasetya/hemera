@@ -139,6 +139,7 @@ public final class ComfyBridge
   private final AtomicInteger active = new AtomicInteger();
   private volatile Snapshot snapshot;
   private volatile Set<String> nodes;
+  private volatile Map<String, Object> info;
   private volatile long nodesAt;
   private volatile long lastUsed;
   private volatile boolean mayHoldModels;
@@ -234,6 +235,7 @@ public final class ComfyBridge
   {
     snapshot = null;
     nodes = null;
+    info = null;
   }
 
   /**
@@ -293,7 +295,8 @@ public final class ComfyBridge
       String version = Json.str(Json.obj(Json.obj(get("/system_stats", 3)).get("system")), "comfyui_version", "?");
       if (nodes == null || now - nodesAt > NODES_TTL_MS)
       {
-        nodes = new HashSet<>(Json.obj(get("/object_info", 60)).keySet());
+        info = Json.obj(get("/object_info", 60));
+        nodes = new HashSet<>(info.keySet());
         nodesAt = now;
       }
       List<Recipe> recipes = recipes();
@@ -523,6 +526,86 @@ public final class ComfyBridge
           "builtin", built.containsKey(id), "disabled", off, "error", error, "recipe", json));
     }
     return out;
+  }
+
+  /**
+   * A first draft of a recipe from a workflow exported with "Save (API Format)": which inputs are
+   * model files, which are the prompt, seed and size, which node saves the result. See
+   * {@link RecipeDrafter}. Needs ComfyUI up, because its node definitions are what is read.
+   */
+  public Map<String, Object> draftRecipe(Map<String, Object> workflow, String title)
+  {
+    Map<String, Object> defs = definitions();
+    Map<String, List<String>> folders = new LinkedHashMap<>();
+    try
+    {
+      for (Object f : Json.arr(get("/models", 10)))
+        folders.put(String.valueOf(f), listFolder(String.valueOf(f)));
+    }
+    catch (Exception e)
+    {
+      throw new HttpError(502, "cannot list ComfyUI's model folders: " + e.getMessage());
+    }
+    return RecipeDrafter.draft(workflow, defs, folders, title).toJson();
+  }
+
+  private Map<String, Object> definitions()
+  {
+    if (!configured())
+      throw new HttpError(409, "ComfyUI is not set up in hemera yet — set its folder or URL first");
+    try
+    {
+      ensureUp(); // hemera stops ComfyUI when it is idle; reading a workflow is a reason to start it again
+    }
+    catch (HttpError e)
+    {
+      throw e;
+    }
+    catch (Exception e)
+    {
+      throw new HttpError(503, "ComfyUI could not be started: " + e.getMessage());
+    }
+    lastUsed = System.currentTimeMillis();
+    Snapshot s = snapshot(false);
+    if (info == null)
+      s = snapshot(true);
+    Map<String, Object> defs = info;
+    if (!s.reachable() || defs == null)
+      throw new HttpError(503, "ComfyUI is not answering" + (s.error() != null ? " (" + s.error() + ")" : "")
+          + " — its node definitions are needed to read a workflow");
+    return defs;
+  }
+
+  /** What a recipe, as it stands in the editor, would find in this ComfyUI right now. */
+  public Map<String, Object> checkRecipe(Map<String, Object> json)
+  {
+    Recipe r;
+    try
+    {
+      r = new Recipe(json);
+    }
+    catch (Exception e)
+    {
+      return Json.map("ok", false, "error", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+    }
+    if (!configured() || !snapshot(false).reachable())
+      return Json.map("ok", true, "reachable", false);
+    List<String> modelFiles = new ArrayList<>();
+    for (String f : listFolder(r.modelFolder))
+      if (r.matches(f))
+        modelFiles.add(f);
+    List<Object> comps = new ArrayList<>();
+    for (Recipe.Component c : r.components)
+      comps.add(Json.map("name", c.name(), "optional", c.optional(), "folder", c.folder(),
+          "found", c.pick(listFolder(c.folder()))));
+    List<Object> missing = new ArrayList<>();
+    Set<String> known = nodes;
+    if (known != null)
+      for (String t : r.classTypes())
+        if (!known.contains(t))
+          missing.add(t);
+    return Json.map("ok", true, "reachable", true, "modelFolder", r.modelFolder, "models", modelFiles,
+        "components", comps, "missingNodes", missing);
   }
 
   /**

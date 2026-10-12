@@ -85,7 +85,7 @@ function openModal(html) {
   $("#modal").scrollTop = 0;
   modalDirty = false;
 }
-function closeModal() { $("#modal").classList.add("hidden"); modalDirty = false; }
+function closeModal() { $("#modal").classList.add("hidden"); $("#modal-card").classList.remove("wide"); $("#modal-card").oninput = $("#modal-card").onchange = null; modalDirty = false; }
 function modalOpen() { return !$("#modal").classList.contains("hidden"); }
 
 // Tapping outside is a convenient dismiss for a read-only dialog, but on a phone the backdrop
@@ -1045,46 +1045,271 @@ async function renderComfy(refresh) {
   $("#recipe-new").onclick = () => editRecipe(null);
 }
 
-const RECIPE_TEMPLATE = {
-  id: "my-model", title: "My model", kind: "image", description: "",
-  model: { folder: "diffusion_models", match: "(?i)^my-model.*\\.safetensors$", set: ["1.unet_name"] },
-  components: {
-    text_encoder: { folder: "text_encoders", match: "(?i)encoder.*\\.safetensors$", set: ["2.clip_name"] },
-    vae: { folder: "vae", match: "(?i)vae.*\\.safetensors$", set: ["3.vae_name"] }
-  },
-  params: {
-    prompt: { type: "string", required: true, set: ["4.text"] },
-    seed: { type: "int", default: "random", min: 0, set: ["5.seed"] }
-  },
-  output: { node: "6" },
-  graph: { "1": { class_type: "UNETLoader", inputs: { unet_name: "", weight_dtype: "default" } } }
-};
+/**
+ * The recipe editor. A recipe is a form here, not a document: the files a model family needs, the
+ * settings a client may change, and which node produces the result. It is filled in from a
+ * workflow exported from ComfyUI ("Save (API Format)") — hemera reads the workflow against what
+ * ComfyUI knows about each node, drafts the recipe, and the user adjusts it. Any other input of
+ * any node in the workflow can be added as a setting with one click, so nothing ComfyUI can do is
+ * out of reach. The JSON itself stays available for the odd thing a form cannot say.
+ */
+async function editRecipe(r) {
+  let rec = r ? JSON.parse(JSON.stringify(r.recipe)) : null;
+  const isNew = !r;
+  let cands = [], outs = [], notes = [], asJson = false, previewTimer = null;
+  const card = $("#modal-card");
+  const API = "/hemera/api/comfyui/recipes";
+  openModal(`<p class="muted">Reading the workflow…</p>`);
+  card.classList.add("wide");
 
-/** Edit a recipe as JSON; saving a built-in's id replaces it, and "Revert" brings it back. */
-function editRecipe(r) {
-  const text = JSON.stringify(r ? r.recipe : RECIPE_TEMPLATE, null, 1);
-  openModal(`
-    <h2>${r ? "Edit recipe — " + esc(r.id) : "New recipe"}</h2>
-    <p class="small muted">${r && r.builtin ? "This one is built in: saving stores your version beside it, and Revert brings the original back. "
-      : ""}The graph is ComfyUI's API format (Save (API Format) in its menu). A parameter's <code>set</code> lists the
-      <code>node.input</code> fields it fills; see <code>docs/media-api.md</code> for the rest.</p>
-    <textarea id="rc-json" class="mono" style="width:100%;min-height:55vh;white-space:pre" spellcheck="false">${esc(text)}</textarea>
-    <div class="row actions">
-      <button class="btn primary" id="rc-save">Save</button>
-      <button class="btn" id="rc-cancel">Cancel</button>
-    </div>`);
-  $("#rc-cancel").onclick = closeModal;
-  $("#rc-save").onclick = async () => {
-    let json;
-    try { json = JSON.parse($("#rc-json").value); } catch (e) { return fail("That is not valid JSON: " + e.message); }
-    if (!json.id) return fail("The recipe needs an 'id'.");
+  const draft = (workflow, title) => POST(API + "/draft", { workflow, title });
+  if (rec) {
+    try { const d = await draft(rec.graph); cands = d.candidates; outs = d.outputs; }
+    catch (e) { notes = ["Settings can't be added from the workflow right now: " + e.message]; }
+  }
+
+  const refsOf = p => {
+    const out = [...(p.set || []), ...Object.keys(p.link || {})];
+    for (const v of Object.values(p.apply || {})) out.push(...Object.keys(v));
+    if (p.values && !Array.isArray(p.values)) for (const v of Object.values(p.values)) out.push(...Object.keys(v));
+    return out;
+  };
+  const used = () => {
+    const s = new Set(rec.model.set || []);
+    Object.values(rec.components || {}).forEach(c => (c.set || []).forEach(x => s.add(x)));
+    Object.values(rec.params || {}).forEach(p => refsOf(p).forEach(x => s.add(x)));
+    return s;
+  };
+  const where = ref => {
+    const [node, ...rest] = ref.split("."), n = (rec.graph || {})[node] || {};
+    return ((n._meta && n._meta.title) || n.class_type || "node " + node) + " · " + rest.join(".");
+  };
+  const lines = m => (Array.isArray(m) ? m : m ? [m] : []).join("\n");
+  const numOrText = v => v === "" ? undefined : (isFinite(+v) ? +v : v);
+
+  function paramRow(name, p) {
+    const num = p.type === "int" || p.type === "number";
+    const vals = Array.isArray(p.values) ? p.values : p.values ? Object.keys(p.values) : null;
+    const dflt = p.type === "bool"
+      ? `<label><input type="checkbox" data-p="${esc(name)}" data-k="default" ${p.default ? "checked" : ""}> on by default</label>`
+      : p.type === "enum" && vals
+      ? `<select data-p="${esc(name)}" data-k="default">${vals.map(v => `<option ${v === p.default ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>`
+      : p.type === "image" ? `<span class="small muted">an image</span>`
+      : `<input type="text" data-p="${esc(name)}" data-k="default" value="${esc(p.default == null ? "" : p.default)}" ${p.type === "string" ? 'placeholder="(empty)"' : ""}>`;
+    const advanced = p.apply || p.link && p.type !== "image" || p.requires || (p.values && !Array.isArray(p.values));
+    return `<div class="rc-prm">
+      <div class="grid">
+        <div><label>Name clients use</label><input type="text" data-pname="${esc(name)}" value="${esc(name)}"></div>
+        <div><label>${esc(p.type)} — default</label>${dflt}</div>
+        <div>${num ? `<label>Min</label><input type="text" data-p="${esc(name)}" data-k="min" value="${esc(p.min == null ? "" : p.min)}">` : ""}</div>
+        <div>${num ? `<label>Max</label><input type="text" data-p="${esc(name)}" data-k="max" value="${esc(p.max == null ? "" : p.max)}">` : ""}</div>
+        <div><button class="btn xs danger" data-pdel="${esc(name)}">Remove</button></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input type="text" style="flex:1;min-width:200px" data-p="${esc(name)}" data-k="description" value="${esc(p.description || "")}" placeholder="What it does (shown to the client's developers)">
+        ${p.type === "string" || p.type === "image" ? `<label style="margin:0"><input type="checkbox" data-p="${esc(name)}" data-k="required" ${p.required ? "checked" : ""}> required</label>` : ""}
+      </div>
+      <div class="small muted" style="margin-top:4px">${advanced ? "Does more than set one field — edit as JSON to change how. " : ""}fills ${(p.set || []).map(x => esc(where(x))).join(", ") || "—"}</div>
+    </div>`;
+  }
+
+  function draw() {
+    const top = $("#modal").scrollTop;
+    const importBox = `<details ${rec ? "" : "open"} class="rc-sec" style="border-top:0;margin-top:8px;padding-top:0">
+        <summary><strong>${rec ? "Use a different workflow" : "Start from a ComfyUI workflow"}</strong></summary>
+        <p class="small muted">Build and test the workflow in ComfyUI, then use its menu's <em>Save (API Format)</em> and give
+        hemera the file (or paste its contents). hemera works out the model files, the prompt, seed and size, and which node
+        makes the result; you adjust the rest below.</p>
+        <input type="file" id="rc-file" accept=".json,application/json">
+        <textarea id="rc-wf" class="mono" style="min-height:90px;margin-top:8px" spellcheck="false" placeholder='{ "1": { "class_type": "UNETLoader", … } }'></textarea>
+        <div class="row" style="margin-top:8px"><button class="btn" id="rc-read">Read workflow</button></div>
+      </details>`;
+    if (asJson) {
+      card.innerHTML = `<h2>${isNew ? "New recipe" : "Edit recipe — " + esc(rec.id)} <span class="small muted">(JSON)</span></h2>
+        <textarea id="rc-json" class="mono" style="width:100%;min-height:55vh;white-space:pre" spellcheck="false">${esc(JSON.stringify(rec, null, 1))}</textarea>
+        <div class="row actions"><button class="btn primary" id="rc-save">Save</button>
+          <button class="btn" id="rc-form">Back to the form</button><button class="btn" id="rc-cancel">Cancel</button></div>`;
+    } else if (!rec) {
+      card.innerHTML = `<h2>New recipe</h2>${importBox}
+        <div class="row actions"><button class="btn" id="rc-blank">Start without a workflow</button><button class="btn" id="rc-cancel">Cancel</button></div>`;
+    } else {
+      const u = used(), fileRefs = new Set([...(rec.model.set || [])]);
+      Object.values(rec.components || {}).forEach(c => (c.set || []).forEach(x => fileRefs.add(x)));
+      const free = cands.filter(c => !u.has(c.ref) && !fileRefs.has(c.ref) && c.type !== "image" || c.type === "image" && !u.has(c.ref));
+      const groups = {};
+      free.forEach(c => (groups[c.node + " " + c.title] = groups[c.node + " " + c.title] || []).push(c));
+      const comps = Object.entries(rec.components || {});
+      const outOpts = outs.length ? outs.map(o => `<option value="${esc(o.node)}" data-kind="${esc(o.kind)}" ${o.node === rec.output.node ? "selected" : ""}>${esc(o.title)} (${esc(o.class)}, node ${esc(o.node)}) — ${esc(o.kind)}</option>`).join("")
+        : "";
+      card.innerHTML = `<h2>${isNew ? "New recipe" : "Edit recipe — " + esc(rec.id)}</h2>
+        ${r && r.builtin ? `<p class="small muted">Built in: saving stores your version beside it, and <em>Revert</em> brings the original back.</p>` : ""}
+        ${notes.length ? `<ul class="small" style="color:var(--accent);margin:6px 0 0 18px">${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
+        ${importBox}
+        <div class="rc-sec"><h3>About</h3>
+          <div class="formgrid">
+            <div><label>Id (what the recipe is called)</label><input type="text" data-f="id" value="${esc(rec.id)}" ${isNew ? "" : "disabled"}></div>
+            <div><label>Name</label><input type="text" data-f="title" value="${esc(rec.title || "")}"></div>
+            <div><label>Makes</label><select data-f="kind">${["image", "video", "3d"].map(k => `<option ${k === rec.kind ? "selected" : ""}>${k}</option>`).join("")}</select></div>
+            <div class="full"><label>Description (shown to clients)</label><input type="text" data-f="description" value="${esc(rec.description || "")}"></div>
+          </div></div>
+        <div class="rc-sec"><h3>Model files</h3>
+          <p class="small muted">Patterns are regular expressions matched against file names in ComfyUI's folders. A file that
+          matches becomes a model; if several do, each is offered under its own file name.</p>
+          <div class="formgrid">
+            <div><label>The model — folder</label><input type="text" class="mono" data-f="mfolder" value="${esc(rec.model.folder || "")}"></div>
+            <div><label>File name pattern</label><input type="text" class="mono" data-f="mmatch" value="${esc(rec.model.match || "")}"></div>
+          </div>
+          <div class="small" id="pv-model"></div>
+          ${comps.map(([n, c], i) => `<div class="rc-prm"><div class="grid" style="grid-template-columns:1fr 1fr 2fr auto">
+              <div><label>Also needs</label><input type="text" data-pcname="${esc(n)}" value="${esc(n)}"></div>
+              <div><label>Folder</label><input type="text" class="mono" data-c="${esc(n)}" data-k="folder" value="${esc(c.folder || "")}"></div>
+              <div><label>Patterns, best first (one per line)</label><textarea class="mono" wrap="off" style="min-height:44px" data-c="${esc(n)}" data-k="match">${esc(lines(c.match))}</textarea></div>
+              <div><label style="margin:0"><input type="checkbox" data-c="${esc(n)}" data-k="optional" ${c.optional ? "checked" : ""}> optional</label></div>
+            </div><div class="small muted">used by ${(c.set || []).map(x => esc(where(x))).join(", ") || "—"} · <span id="pv-c-${i}"></span></div></div>`).join("")}
+        </div>
+        <div class="rc-sec"><h3>Settings a client can change</h3>
+          <p class="small muted">Everything else in the workflow keeps the value it had when you exported it.</p>
+          ${Object.entries(rec.params || {}).map(([n, p]) => paramRow(n, p)).join("") || `<p class="small muted">None yet.</p>`}
+          ${Object.keys(groups).length ? `<div style="margin-top:10px"><select id="rc-add"><option value="">Add a setting from the workflow…</option>
+            ${Object.entries(groups).map(([g, list]) => `<optgroup label="${esc(list[0].title)} (node ${esc(list[0].node)})">${list.map(c =>
+              `<option value="${esc(c.ref)}">${esc(c.input)} — ${esc(c.type)}${c.value !== "" && c.value != null && c.type !== "string" ? " = " + esc(String(c.value)) : ""}</option>`).join("")}</optgroup>`).join("")}
+          </select></div>` : ""}
+        </div>
+        <div class="rc-sec"><h3>Result</h3>
+          ${outs.length ? `<select data-f="output">${outOpts}</select>` : `<label>Output node</label><input type="text" data-f="output" value="${esc(rec.output.node || "")}">`}
+          <div class="small muted" id="pv-warn" style="margin-top:6px"></div>
+        </div>
+        <div class="row actions"><button class="btn primary" id="rc-save">Save</button>
+          <button class="btn" id="rc-cancel">Cancel</button><button class="btn" id="rc-asjson">Edit as JSON</button></div>`;
+    }
+    $("#modal").scrollTop = top;
+    bind();
+    if (rec && !asJson) schedulePreview();
+  }
+
+  function schedulePreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(async () => {
+      if (!rec || asJson || !$("#pv-model")) return;
+      let c;
+      try { c = await POST(API + "/check", rec); } catch (e) { return; }
+      if (!$("#pv-model")) return;
+      const set = (el, html) => { if (el) el.innerHTML = html; };
+      if (!c.ok) { set($("#pv-model"), `<span style="color:var(--danger)">${esc(c.error)}</span>`); return; }
+      if (!c.reachable) { set($("#pv-model"), `<span class="muted">ComfyUI is not reachable, so nothing can be checked.</span>`); return; }
+      set($("#pv-model"), c.models.length
+        ? `<span style="color:var(--ok)">Matches ${c.models.length} file${c.models.length > 1 ? "s" : ""} in ${esc(c.modelFolder)}: ${c.models.map(esc).join(", ")}</span>`
+        : `<span style="color:var(--danger)">No file in ${esc(c.modelFolder)} matches yet.</span>`);
+      c.components.forEach((k, i) => set($("#pv-c-" + i), k.found
+        ? `<span style="color:var(--ok)">found ${esc(k.found)}</span>`
+        : `<span style="color:${k.optional ? "var(--muted)" : "var(--danger)"}">${k.optional ? "not found (optional)" : "not found in " + esc(k.folder)}</span>`));
+      set($("#pv-warn"), c.missingNodes.length ? `<span style="color:var(--danger)">This ComfyUI has no node ${c.missingNodes.map(esc).join(", ")} — update it or install the custom node.</span>` : "");
+    }, 400);
+  }
+
+  const unique = (base, taken) => { let n = base, i = 2; while (taken[n]) n = base + "_" + i++; return n; };
+  const rename = (obj, from, to) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k === from ? to : k, v]));
+
+  function bind() {
+    $("#rc-cancel").onclick = closeModal;
+    const file = $("#rc-file");
+    if (file) file.onchange = async () => { if (file.files[0]) $("#rc-wf").value = await file.files[0].text(); };
+    if ($("#rc-read")) $("#rc-read").onclick = async () => {
+      let wf;
+      try { wf = JSON.parse($("#rc-wf").value); } catch (e) { return fail("That is not valid JSON: " + e.message); }
+      if (rec && Object.keys(rec.params || {}).length && !confirm("Replace this recipe's files, settings and workflow with the new workflow's?")) return;
+      try {
+        const d = await draft(wf, rec && rec.title);
+        const keep = rec && !isNew ? { id: rec.id, title: rec.title, description: rec.description } : {};
+        rec = Object.assign(d.recipe, keep.id ? keep : {}); cands = d.candidates; outs = d.outputs; notes = d.notes;
+        draw();
+      } catch (e) { fail(e); }
+    };
+    if ($("#rc-blank")) $("#rc-blank").onclick = () => {
+      rec = { id: "", title: "", kind: "image", description: "", model: { folder: "diffusion_models", match: "", set: [] },
+        components: {}, params: {}, output: { node: "" }, graph: {} };
+      draw();
+    };
+    if ($("#rc-asjson")) $("#rc-asjson").onclick = () => { asJson = true; draw(); };
+    if ($("#rc-form")) $("#rc-form").onclick = () => {
+      try { rec = JSON.parse($("#rc-json").value); } catch (e) { return fail("That is not valid JSON: " + e.message); }
+      asJson = false; draw();
+    };
+    const add = $("#rc-add");
+    if (add) add.onchange = () => {
+      const c = cands.find(x => x.ref === add.value);
+      if (!c) return;
+      const p = { type: c.type };
+      if (c.type !== "image" && c.value != null) p.default = c.value;
+      ["min", "max", "step"].forEach(k => { if (c[k] != null) p[k] = c[k]; });
+      if (c.type === "enum") p.values = c.values;
+      p.set = [c.ref];
+      const name = unique(c.input.replace(/[^A-Za-z0-9_]/g, "_"), rec.params);
+      rec.params[name] = p;
+      draw();
+    };
+    $$("[data-pdel]", card).forEach(b => b.onclick = () => { delete rec.params[b.dataset.pdel]; draw(); });
+    if ($("#rc-save")) $("#rc-save").onclick = save;
+  }
+
+  card.oninput = card.onchange = e => {
+    const t = e.target, d = t.dataset;
+    if (!rec || asJson) return;
+    const val = t.type === "checkbox" ? t.checked : t.value;
+    if (d.f) {
+      if (d.f === "mfolder") rec.model.folder = val;
+      else if (d.f === "mmatch") rec.model.match = val;
+      else if (d.f === "output") {
+        rec.output.node = val;
+        const o = outs.find(x => x.node === val);
+        if (o && e.type === "change") { rec.kind = o.kind; draw(); return; }
+      } else rec[d.f] = val;
+      if (d.f === "kind" && e.type === "change") draw();
+    } else if (d.c && rec.components[d.c]) {
+      const c = rec.components[d.c];
+      if (d.k === "match") { const l = val.split("\n").map(s => s.trim()).filter(Boolean); c.match = l.length === 1 ? l[0] : l; }
+      else if (d.k === "optional") { if (val) c.optional = true; else delete c.optional; }
+      else c[d.k] = val;
+    } else if (d.p && rec.params[d.p]) {
+      const p = rec.params[d.p];
+      if (d.k === "default") {
+        if (p.type === "bool") p.default = val;
+        else if (p.type === "int" || p.type === "number") { const v = numOrText(val); if (v === undefined) delete p.default; else p.default = v; }
+        else if (val === "" && p.type !== "string") delete p.default; else p.default = val;
+      } else if (d.k === "min" || d.k === "max") { const v = numOrText(val); if (v === undefined) delete p[d.k]; else p[d.k] = v; }
+      else if (d.k === "required") { if (val) p.required = true; else delete p.required; }
+      else if (d.k === "description") { if (val) p.description = val; else delete p.description; }
+    } else if (d.pname !== undefined && e.type === "change") {
+      const to = val.trim().replace(/[^A-Za-z0-9_]/g, "_");
+      if (to && to !== d.pname && !rec.params[to]) rec.params = rename(rec.params, d.pname, to);
+      draw(); return;
+    } else if (d.pcname !== undefined && e.type === "change") {
+      const to = val.trim().replace(/[^A-Za-z0-9_]/g, "_");
+      if (to && to !== d.pcname && !rec.components[to]) rec.components = rename(rec.components, d.pcname, to);
+      draw(); return;
+    }
+    schedulePreview();
+  };
+
+  async function save() {
+    if (asJson) {
+      try { rec = JSON.parse($("#rc-json").value); } catch (e) { return fail("That is not valid JSON: " + e.message); }
+    }
+    if (!rec.id || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(rec.id)) return fail("The id is needed: letters, digits, '.', '_' and '-'.");
+    if (!rec.output.node) return fail("Pick the node that makes the result, under Result.");
     try {
-      const out = await PUT("/hemera/api/comfyui/recipes/" + encodeURIComponent(json.id), json);
+      if (isNew) {
+        const have = (await GET(API)).data.find(x => x.id === rec.id);
+        if (have && !confirm("A recipe called '" + rec.id + "' already exists (" + have.source + "). Replace it?")) return;
+      }
+      const out = await PUT(API + "/" + encodeURIComponent(rec.id), rec);
       closeModal();
       toast("Recipe saved" + (out.warnings && out.warnings.length ? " — " + out.warnings.join("; ") : ""));
       renderComfy(true);
     } catch (e) { fail(e); }
-  };
+  }
+
+  draw();
 }
 
 // ---------------------------------------------------------------- proxies

@@ -346,14 +346,21 @@ the workflow itself in ComfyUI's API format. Built-in recipes cover TRELLIS.2, P
 Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain, and turbo-merged checkpoints), Qwen-Image and
 Qwen-Image 2.1 Turbo; they are the files in [resources/comfyui/](resources/comfyui/), and the jar
 lists them itself, so adding one is adding a file. Recipes are managed in the Directories tab, under
-*Recipes*: **Edit** opens one as JSON (a built-in saved there is stored as your own version, and
-**Revert** brings the original back), **New recipe** starts a family hemera does not know, and
-**Switch off** hides a built-in without deleting it. Saving checks that the recipe parses, that its
-graph's output exists and, when ComfyUI is reachable, warns about nodes it lacks. The same is
+*Recipes*, and nobody has to write one by hand: **New recipe** takes a workflow exported from
+ComfyUI with *Save (API Format)*, reads it against what ComfyUI says about each node, and drafts the
+recipe — which inputs choose model files (and the pattern that finds them, so a bf16 and an int8 of
+the same family are both offered), which take the prompt, seed, steps, size or image, and which node
+saves the result. The editor is a form: the model files with a live check of what they match in
+ComfyUI right now, the settings a client may change (names, defaults and ranges, the ranges taken
+from ComfyUI), and the result node. Any other input of any node in the workflow can be added as a
+setting from a list, so nothing ComfyUI can do is out of reach; *Edit as JSON* is there for the odd
+thing a form cannot say. A built-in saved in the editor is stored as your own version and **Revert**
+brings the original back; **Switch off** hides a built-in without deleting it. Saving checks that the
+recipe parses and that its output exists, and warns about nodes ComfyUI lacks. The same is
 available over HTTP — `GET /hemera/api/comfyui/recipes`, `PUT` and `DELETE`
-`/hemera/api/comfyui/recipes/{id}` — and underneath it is just `<home>/comfyui/<id>.json`: export a
-workflow from ComfyUI with *Save (API format)*, wrap it the way the built-ins are wrapped, and the
-next look picks it up. A model is offered only when ComfyUI has every file and node its recipe
+`/hemera/api/comfyui/recipes/{id}`, `POST …/recipes/draft` with a
+workflow, `POST …/recipes/check` — and underneath it is just `<home>/comfyui/<id>.json`, so a recipe
+can also be written by hand or handed to someone as a file. A model is offered only when ComfyUI has every file and node its recipe
 needs; the Directories tab says what is missing otherwise.
 
 Community checkpoints rarely follow a naming scheme, so a file no pattern recognises is listed

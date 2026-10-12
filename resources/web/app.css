@@ -140,6 +140,12 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 #modal.hidden { display: none; }
 #modal-card { width: 640px; max-width: 100%; }
 #modal-card .row.actions { margin-top: 16px; }
+#modal-card.wide { width: 900px; }
+.rc-sec { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.rc-prm { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+.rc-prm .grid { display: grid; grid-template-columns: 1.3fr 1fr .6fr .6fr auto; gap: 8px; align-items: end; }
+.rc-prm label { margin: 0 0 3px; font-size: 12px; }
+@media (max-width: 720px) { .rc-prm .grid, .rc-prm .grid[style] { grid-template-columns: 1fr 1fr !important; } }
 
 /* ---- toast ---- */
 #toast {

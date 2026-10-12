@@ -286,15 +286,16 @@ public final class Recipe
         return "true".equalsIgnoreCase(String.valueOf(raw).trim()) || "1".equals(String.valueOf(raw).trim());
       case "enum":
       {
-        String s = String.valueOf(raw).trim().toLowerCase(Locale.ROOT);
+        String s = String.valueOf(raw).trim();
         List<String> allowed = new ArrayList<>();
         if (p.get("values") instanceof Map<?, ?> m)
           m.keySet().forEach(k -> allowed.add(String.valueOf(k)));
         else
           Json.arr(p.get("values")).forEach(k -> allowed.add(String.valueOf(k)));
-        if (!allowed.contains(s))
-          throw new HttpError(400, "'" + name + "' must be one of " + allowed + ", got '" + raw + "'");
-        return s;
+        for (String a : allowed)
+          if (a.equalsIgnoreCase(s))
+            return a;
+        throw new HttpError(400, "'" + name + "' must be one of " + allowed + ", got '" + raw + "'");
       }
       default:
         return String.valueOf(raw);

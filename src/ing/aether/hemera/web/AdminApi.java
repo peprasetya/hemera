@@ -62,6 +62,13 @@ public final class AdminApi
         ex -> Router.sendJson(ex, 200, comfy.status("1".equals(Router.query(ex, "refresh")))));
     router.add("GET", "/hemera/api/comfyui/recipes",
         ex -> Router.sendJson(ex, 200, Json.map("object", "list", "data", comfy.recipeList())));
+    router.add("POST", "/hemera/api/comfyui/recipes/draft", ex -> {
+      Map<String, Object> body = Router.readJson(ex);
+      Map<String, Object> wf = Json.obj(body.containsKey("workflow") ? body.get("workflow") : body);
+      Router.sendJson(ex, 200, comfy.draftRecipe(wf, Json.str(body, "title", null)));
+    });
+    router.add("POST", "/hemera/api/comfyui/recipes/check",
+        ex -> Router.sendJson(ex, 200, comfy.checkRecipe(Router.readJson(ex))));
     router.addPrefix("PUT", "/hemera/api/comfyui/recipes/",
         ex -> Router.sendJson(ex, 200, comfy.saveRecipe(recipeId(ex), Router.readJson(ex))));
     router.addPrefix("DELETE", "/hemera/api/comfyui/recipes/",
