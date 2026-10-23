@@ -947,6 +947,16 @@ async function renderComfy(refresh) {
   const state = !st || !st.configured ? '<span class="badge">not configured</span>'
     : st.reachable ? `<span class="badge ok">connected</span> <span class="small muted">ComfyUI ${esc(st.version || "")}${st.startedByHemera ? ", started by hemera" : ""}</span>`
     : `<span class="badge danger">unreachable</span> <span class="small muted">${esc(st.error || "")}</span>`;
+  const ctl = !st || !st.canControl ? ""
+    : st.starting ? `<span class="badge warn">starting…</span>`
+    : st.reachable ? (st.startedByHemera ? `<button class="btn" id="comfy-restart">Restart</button> <button class="btn" id="comfy-stop">Stop</button>` : "")
+    : `<button class="btn primary" id="comfy-start">Start ComfyUI</button>`;
+  const crashed = st && st.exited
+    ? `<p class="small" style="color:var(--danger);margin-top:10px">ComfyUI stopped on its own — ${esc(st.exited.reason)} (exit code ${esc(st.exited.code)}). ` +
+      `It starts again by itself when a job needs it, or press Start.</p>` : "";
+  const output = st && st.output && st.output.length
+    ? `<details style="margin-top:8px"><summary class="small muted">ComfyUI's last output</summary>
+        <pre class="mono small" style="white-space:pre-wrap;max-height:240px;overflow:auto">${esc(st.output.join("\n"))}</pre></details>` : "";
   const rows = models.map(m => `<tr>
       <td data-label="Model" class="mono">${esc(m.id)}</td>
       <td data-label="Makes"><span class="badge warn">${esc(m.kind)}</span></td>
@@ -990,8 +1000,10 @@ async function renderComfy(refresh) {
       <div class="row" style="margin-top:12px">
         <button class="btn primary" id="comfy-save">Save</button>
         <button class="btn" id="comfy-refresh">Look again</button>
+        ${ctl}
         <span>${state}</span>
       </div>
+      ${crashed}${output}
       ${rows ? `<div class="tablewrap" style="margin-top:12px"><table class="stack">
         <tr><th>Model</th><th>Makes</th><th>Family</th><th>Status</th></tr>${rows}</table></div>` : ""}
       <h3 style="margin-top:16px">Recipes</h3>
@@ -1017,6 +1029,21 @@ async function renderComfy(refresh) {
     save("ComfyUI settings saved");
   };
   $("#comfy-refresh").onclick = () => renderComfy(true);
+  const control = async (action, force) => {
+    try {
+      await POST("/hemera/api/comfyui/control", { action, force: !!force });
+      toast(action === "stop" ? "ComfyUI stopped" : "Starting ComfyUI — it can take a minute or two");
+      renderComfy(true);
+    } catch (e) {
+      const m = String(e.message || e);
+      if (m.includes("force=1") && confirm(m.replace(/ Send force=1.*$/, "") + "\n\nDo it anyway?")) return control(action, true);
+      fail(e);
+    }
+  };
+  [["start", "#comfy-start"], ["restart", "#comfy-restart"], ["stop", "#comfy-stop"]].forEach(([a, sel]) => {
+    if ($(sel)) $(sel).onclick = () => control(a);
+  });
+  if (st && st.starting) setTimeout(() => { if ($("#comfy-refresh")) renderComfy(true); }, 3000);
   const assign = (i, recipe) => {
     CONFIG.comfyui = Object.assign({}, c, { assign: Object.assign({}, c.assign, { [loose[i].file]: recipe }) });
     save(recipe === "-" ? "File hidden" : "File assigned");

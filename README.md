@@ -376,6 +376,12 @@ Other keys: `python` (interpreter, when ComfyUI's virtualenv is not `venv/` or `
 beside its folder), `args` (extra arguments for `main.py`), `env`, `autoStart` (default `true`:
 start with hemera rather than at the first request).
 
+If ComfyUI dies — typically the kernel killing it when memory runs out — the Directories tab says
+so, with the exit code and ComfyUI's last output, and offers **Start**; **Restart** and **Stop** are
+there while it runs. The next job that needs it also starts it again by itself. These controls
+work on a ComfyUI hemera started from its `dir`; one only reached by `url` has to be restarted where
+it runs (`POST /hemera/api/comfyui/control` with `{"action": "start|restart|stop"}`).
+
 ## Configuration
 
 Everything is one JSON document (`hemera.json`), editable in the UI or by hand:

@@ -140,6 +140,10 @@ public final class ComfyBridge
   private volatile Snapshot snapshot;
   private volatile Set<String> nodes;
   private volatile Map<String, Object> info;
+  private static final int TAIL_LINES = 60;
+  private final java.util.ArrayDeque<String> tail = new java.util.ArrayDeque<>();
+  private volatile Map<String, Object> exited;
+  private volatile Process stoppedByUs;
   private volatile long nodesAt;
   private volatile long lastUsed;
   private volatile boolean mayHoldModels;
@@ -738,6 +742,20 @@ public final class ComfyBridge
   }
 
   /** Everything the configure page shows about the bridge. */
+  private List<Object> outputTail()
+  {
+    synchronized (tail)
+    {
+      List<Object> out = new ArrayList<>();
+      int skip = Math.max(0, tail.size() - 30);
+      int i = 0;
+      for (String line : tail)
+        if (i++ >= skip)
+          out.add(line);
+      return out;
+    }
+  }
+
   public Map<String, Object> status(boolean refresh)
   {
     Snapshot s = snapshot(refresh);
@@ -758,6 +776,10 @@ public final class ComfyBridge
         "error", s.error(),
         "version", s.version(),
         "startedByHemera", managed,
+        "starting", managed && !s.reachable(),
+        "canControl", configured() && !dir().isEmpty(),
+        "exited", exited,
+        "output", outputTail(),
         "activeJobs", active.get(),
         "models", models,
         "unassigned", s.unassigned());
@@ -1105,14 +1127,42 @@ public final class ComfyBridge
     {
     }
     Process p = process;
+    synchronized (tail)
+    {
+      tail.clear();
+    }
+    exited = null;
     Thread.ofVirtual().name("comfyui-out").start(() -> {
       try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8)))
       {
         String line;
         while ((line = r.readLine()) != null)
+        {
           Log.debug("comfyui", line);
+          synchronized (tail)
+          {
+            tail.addLast(line);
+            while (tail.size() > TAIL_LINES)
+              tail.removeFirst();
+          }
+        }
       }
       catch (IOException ignored)
+      {
+      }
+      try
+      {
+        int code = p.waitFor();
+        // a stop asked for by hemera or its user is not a crash
+        if (process == p && stoppedByUs != p)
+        {
+          exited = Json.map("code", (long) code, "at", System.currentTimeMillis() / 1000,
+              "reason", code == 137 || code == 9 ? "killed — most likely the system ran out of memory" : "exited");
+          Log.warn("comfyui", "ComfyUI exited on its own (code " + code + ")");
+          snapshot = null;
+        }
+      }
+      catch (InterruptedException ignored)
       {
       }
     });
@@ -1131,6 +1181,93 @@ public final class ComfyBridge
         return p.toString();
     }
     return "python3";
+  }
+
+  /**
+   * Start, restart or stop the ComfyUI hemera runs. Starting returns at once — loading models'
+   * folders and nodes takes a while — and the status says when it answers. Only a ComfyUI that
+   * hemera started from its configured folder can be restarted or stopped from here.
+   */
+  public Map<String, Object> control(String action, boolean force)
+  {
+    if (!configured())
+      throw new HttpError(409, "ComfyUI is not set up in hemera yet — give its folder or URL first");
+    if (dir().isEmpty())
+      throw new HttpError(409, "hemera has no ComfyUI folder to start it from — it only knows the URL "
+          + url() + ". Set the folder (the one with main.py), or restart ComfyUI yourself.");
+    boolean ours;
+    synchronized (this)
+    {
+      ours = process != null && process.isAlive();
+    }
+    boolean answering = answering();
+    if (answering && !ours && !"start".equals(action))
+      throw new HttpError(409, "this ComfyUI was not started by hemera, so hemera cannot " + action
+          + " it — do that where it runs");
+    if (active.get() > 0 && !"start".equals(action) && !force)
+      throw new HttpError(409, active.get() + " job(s) are running on ComfyUI — " + action
+          + " would end them. Send force=1 to do it anyway");
+    switch (action)
+    {
+      case "stop":
+        stopAndWait();
+        break;
+      case "restart":
+        stopAndWait();
+        startInBackground();
+        break;
+      case "start":
+        if (answering)
+          return Json.map("state", "running");
+        startInBackground();
+        break;
+      default:
+        throw new HttpError(400, "unknown action '" + action + "' — start, restart or stop");
+    }
+    invalidate();
+    return Json.map("state", "stop".equals(action) ? "stopped" : "starting");
+  }
+
+  private void startInBackground()
+  {
+    Thread.ofVirtual().name("comfyui-start").start(() -> {
+      try
+      {
+        ensureUp();
+      }
+      catch (Exception e)
+      {
+        Log.warn("comfyui", "could not start ComfyUI: " + e.getMessage());
+      }
+    });
+  }
+
+  private void stopAndWait()
+  {
+    Process p;
+    synchronized (this)
+    {
+      p = process;
+      stoppedByUs = p;
+    }
+    try
+    {
+      if (p != null && p.isAlive())
+      {
+        p.destroy();
+        if (!p.waitFor(20, TimeUnit.SECONDS))
+        {
+          p.destroyForcibly();
+          p.waitFor(10, TimeUnit.SECONDS);
+        }
+      }
+    }
+    catch (InterruptedException e)
+    {
+      Thread.currentThread().interrupt();
+    }
+    exited = null;
+    Log.info("comfyui", "ComfyUI stopped");
   }
 
   private synchronized void stopProcess()

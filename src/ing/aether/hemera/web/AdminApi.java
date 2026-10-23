@@ -60,6 +60,10 @@ public final class AdminApi
     router.add("POST", "/hemera/api/loglevel", this::logLevel);
     router.add("GET", "/hemera/api/comfyui",
         ex -> Router.sendJson(ex, 200, comfy.status("1".equals(Router.query(ex, "refresh")))));
+    router.add("POST", "/hemera/api/comfyui/control", ex -> {
+      Map<String, Object> body = Router.readJson(ex);
+      Router.sendJson(ex, 200, comfy.control(Json.str(body, "action", ""), Json.bool(body, "force", false)));
+    });
     router.add("GET", "/hemera/api/comfyui/recipes",
         ex -> Router.sendJson(ex, 200, Json.map("object", "list", "data", comfy.recipeList())));
     router.add("POST", "/hemera/api/comfyui/recipes/draft", ex -> {
