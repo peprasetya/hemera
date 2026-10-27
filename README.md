@@ -372,15 +372,38 @@ that is memory they cannot use, so after `comfyui.keepAliveSeconds` (default 300
 no jobs hemera asks it to unload. Results are written to `output/hemera/` and uploads to
 `input/hemera/` inside ComfyUI; hemera never deletes there, so clear them out now and then.
 
+**Image edits.** An image recipe with an `image` setting also answers `/v1/images/edits`: the
+uploaded files fill `image`, `image_2` and `image_3` in order. The built-in Qwen-Image 2.1 Turbo
+recipe takes up to three reference images this way.
+
+**Hung jobs.** A healthy job reports every sampling step, so a job that ComfyUI has said nothing
+about for `comfyui.stallSeconds` (default 900 for images, 1800 for video and 3D) is taken as hung:
+hemera restarts ComfyUI and runs the job once more, and answers 504 if that hangs too. Each finished
+job logs its longest quiet spell (`journalctl -u hemera | grep "quiet spell"`), which is the number
+to set the limit from. While ComfyUI is stopped its models stay listed, and the next job starts it.
+
 Other keys: `python` (interpreter, when ComfyUI's virtualenv is not `venv/` or `.venv/` in or
 beside its folder), `args` (extra arguments for `main.py`), `env`, `autoStart` (default `true`:
-start with hemera rather than at the first request).
+start with hemera rather than at the first request), `memoryMB` (what a job is expected to need,
+default 24576; see memory below), `exclusiveGpu` (default `false`: when `true`, every other engine
+is unloaded before a ComfyUI job and an idle ComfyUI is stopped before another engine loads).
 
 If ComfyUI dies — typically the kernel killing it when memory runs out — the Directories tab says
 so, with the exit code and ComfyUI's last output, and offers **Start**; **Restart** and **Stop** are
 there while it runs. The next job that needs it also starts it again by itself. These controls
 work on a ComfyUI hemera started from its `dir`; one only reached by `url` has to be restarted where
 it runs (`POST /hemera/api/comfyui/control` with `{"action": "start|restart|stop"}`).
+
+## Memory
+
+Before an engine starts, hemera estimates what it needs — its files, plus 2 GB of working memory
+for a language model or 8 GB for an image model (or the model's own `memoryMB`) — and compares that
+with what is free: the smaller of the kernel's available memory and, on a GPU that shares system
+RAM, the GPU's own counter. When it fits, nothing happens. When it does not, hemera unloads the
+model idle the longest, then the next, and finally asks an idle ComfyUI to drop its cached models,
+until it fits with `memoryReserveMB` (default 2048) to spare. A model answering a request is never
+unloaded; if nothing idle is left, hemera loads anyway and logs a warning. ComfyUI jobs ask for
+room the same way before they run.
 
 ## Configuration
 
@@ -392,11 +415,13 @@ Everything is one JSON document (`hemera.json`), editable in the UI or by hand:
   "logLevel": "info",              // info | debug (engine output) | trace (+ http bodies)
   "keepAliveSeconds": 300,
   "loadTimeoutSeconds": 600,
+  "memoryReserveMB": 2048,          // memory kept free when making room for a model
   "modelDirs": ["/srv/models/gguf", "/usr/share/ollama/.ollama/models"],
   "librarySearchRoots": [],         // extra globs for GPU runtimes; built-ins cover the usual paths
   "comfyui": {                      // optional; see ComfyUI above
     "dir": "/opt/ComfyUI",          // hemera starts it from here; or "url" for one already running
     "keepAliveSeconds": 300,        // idle time before it is asked to unload its models
+    "stallSeconds": 900,            // silence before a job counts as hung (default 900 image, 1800 video/3D)
     "assign": {}                    // file name -> recipe id, for files no pattern recognises
   },
   "engines": {

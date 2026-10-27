@@ -92,6 +92,8 @@ public final class ComfyBridge
     private volatile boolean cancelled;
     private volatile boolean started;
     private volatile int progress;
+    private volatile long lastActivity = System.currentTimeMillis();
+    private volatile long longestQuiet;
     private volatile Map<String, Object> used = Map.of();
 
     public int progress()
@@ -285,9 +287,19 @@ public final class ComfyBridge
       s = snapshot;
       if (!force && s != null && System.currentTimeMillis() - s.at() < SNAPSHOT_TTL_MS)
         return s;
-      return snapshot = look();
+      Snapshot fresh = look();
+      if (fresh.reachable())
+        lastReachable = fresh;
+      else if (lastReachable != null && !dir().isEmpty())
+        // stopped to give the GPU to another engine, or crashed: its models are still on disk and
+        // the next job starts it again, so keep offering them rather than answering "no such model"
+        fresh = new Snapshot(false, fresh.error(), lastReachable.version(), lastReachable.offers(),
+            lastReachable.unassigned(), fresh.at());
+      return snapshot = fresh;
     }
   }
+
+  private volatile Snapshot lastReachable;
 
   private Snapshot look()
   {
@@ -805,10 +817,87 @@ public final class ComfyBridge
   public Output execute(Offer offer, Map<String, Object> request, Run run) throws Exception
   {
     active.incrementAndGet();
+    try
+    {
+      java.util.function.LongConsumer gc = gpuClearer;
+      if (gc != null && exclusive())
+        gc.accept(900);
+      java.util.function.LongConsumer rm = roomMaker;
+      if (rm != null)
+        rm.accept(wantedBytes());
+      for (int attempt = 1;; attempt++)
+      {
+        try
+        {
+          return attempt(offer, request, run);
+        }
+        catch (Stalled s)
+        {
+          if (attempt >= 2 || run.cancelled)
+            throw new HttpError(504, "ComfyUI made no progress on '" + offer.id() + "' for " + s.seconds
+                + "s, twice — it was restarted both times; its last output is on the ComfyUI card in /configure/");
+          Log.warn("comfyui", "'" + offer.id() + "' made no progress for " + s.seconds
+              + "s; restarting ComfyUI and trying once more");
+          restartStalled(s.process);
+        }
+      }
+    }
+    finally
+    {
+      lastUsed = System.currentTimeMillis();
+      active.decrementAndGet();
+    }
+  }
+
+  /** A job that went quiet: ComfyUI on this machine sometimes hangs mid-job without failing. */
+  private static final class Stalled extends Exception
+  {
+    final Process process;
+    final long seconds;
+
+    Stalled(Process process, long seconds)
+    {
+      super(null, null, false, false);
+      this.process = process;
+      this.seconds = seconds;
+    }
+  }
+
+  /**
+   * How long a running job may go without a word from ComfyUI before it counts as hung. This is
+   * silence, not run time: a healthy job reports every sampling step. Video and 3D get longer, as a
+   * long video's VAE decode can run for minutes without reporting anything. Each finished job logs
+   * its longest quiet spell, which is the number to set comfyui.stallSeconds from.
+   */
+  private long stallSeconds(Offer offer)
+  {
+    long configured = Json.num(conf(), "stallSeconds", 0);
+    if (configured > 0)
+      return configured;
+    return "image".equals(offer.recipe().kind) ? 900 : 1800;
+  }
+
+  private final Object restartLock = new Object();
+
+  /** Restart the ComfyUI that hung, unless another stalled job already did. */
+  private void restartStalled(Process hung) throws Exception
+  {
+    synchronized (restartLock)
+    {
+      if (hung != null && process == hung && hung.isAlive())
+        stopAndWait();
+    }
+    ensureUp();
+  }
+
+  private Output attempt(Offer offer, Map<String, Object> request, Run run) throws Exception
+  {
     WebSocket ws = null;
     try
     {
       ensureUp();
+      Process serving = process;
+      long stallMs = stallSeconds(offer) * 1000;
       String clientId = UUID.randomUUID().toString();
       Recipe.Built built = offer.recipe().build(offer.file(), offer.components(), request,
           SUBFOLDER + "/" + offer.recipe().kind + "_" + clientId.substring(0, 8), this::upload);
@@ -820,6 +909,7 @@ public final class ComfyBridge
       mayHoldModels = true;
       String promptId = queue(built.graph(), clientId, offer);
       run.promptId = promptId;
+      run.lastActivity = System.currentTimeMillis();
       if (run.cancelled)
         run.cancel();
       Log.info("comfyui", "'" + offer.id() + "' queued as " + promptId + " (" + built.graph().size() + " nodes)");
@@ -854,6 +944,10 @@ public final class ComfyBridge
         {
           if (run.cancelled && tick % 5 == 0)
             run.cancel();
+          // only a socket that reports progress can tell a quiet job from a hung one
+          if (ws != null && run.started && !run.cancelled
+              && System.currentTimeMillis() - run.lastActivity > stallMs)
+            throw new Stalled(serving, stallMs / 1000);
           continue;
         }
         if (run.cancelled)
@@ -862,6 +956,9 @@ public final class ComfyBridge
         if (!"success".equals(Json.str(status, "status_str", "")))
           throw new HttpError(502, failure(status));
         run.progress = 100;
+        if (ws != null)
+          Log.info("comfyui", "'" + offer.id() + "' finished; longest quiet spell " + run.longestQuiet / 1000
+              + "s (limit " + stallMs / 1000 + "s)");
         return output(Json.obj(Json.obj(entry.get("outputs")).get(offer.recipe().outputNode)), offer);
       }
     }
@@ -869,8 +966,6 @@ public final class ComfyBridge
     {
       if (ws != null)
         ws.abort();
-      lastUsed = System.currentTimeMillis();
-      active.decrementAndGet();
     }
   }
 
@@ -947,7 +1042,15 @@ public final class ComfyBridge
             Map<String, Object> msg = Json.parseObj(text.toString());
             Map<String, Object> d = Json.obj(msg.get("data"));
             double part = 0;
-            switch (Json.str(msg, "type", ""))
+            String type = Json.str(msg, "type", "");
+            if (!"status".equals(type)) // queue counts go to every client, so they say nothing about this job
+            {
+              long now = System.currentTimeMillis();
+              if (run.started)
+                run.longestQuiet = Math.max(run.longestQuiet, now - run.lastActivity);
+              run.lastActivity = now;
+            }
+            switch (type)
             {
               case "execution_start" -> run.started = true;
               case "execution_cached" -> Json.arr(d.get("nodes")).forEach(n -> done.add(String.valueOf(n)));
@@ -1240,6 +1343,72 @@ public final class ComfyBridge
         Log.warn("comfyui", "could not start ComfyUI: " + e.getMessage());
       }
     });
+  }
+
+  /** Memory this bridge asks for before a job, in MB (comfyui.memoryMB). */
+  public long wantedBytes()
+  {
+    return Json.num(conf(), "memoryMB", 24576) * 1024L * 1024;
+  }
+
+  private volatile java.util.function.LongConsumer roomMaker;
+  private volatile java.util.function.LongConsumer gpuClearer;
+
+  /** Unloads every other engine before a job (comfyui.exclusiveGpu, off by default). */
+  public void setGpuClearer(java.util.function.LongConsumer clearer)
+  {
+    gpuClearer = clearer;
+  }
+
+  private boolean exclusive()
+  {
+    return Json.bool(conf(), "exclusiveGpu", false);
+  }
+
+  /**
+   * ComfyUI (ROCm) and the llama.cpp / stable-diffusion.cpp engines (Vulkan) stall each other when
+   * both hold the GPU: the edit job hangs at 100% for hours with a language model resident, and
+   * finishes in a minute without one. Before another engine loads, an idle ComfyUI is stopped; it
+   * starts again by itself on its next job.
+   */
+  public void releaseGpu()
+  {
+    if (!exclusive() || !configured() || dir().isEmpty())
+      return;
+    for (int i = 0; i < 900 && active.get() > 0; i++)
+      try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+    Process p = process;
+    if (p != null && p.isAlive() && active.get() == 0)
+    {
+      if (lastReachable == null && answering())
+        snapshot(true); // remember what it offers, so requests still find its models while it is stopped
+      Log.info("comfyui", "Stopping idle ComfyUI so another engine can have the GPU");
+      stopAndWait();
+    }
+  }
+
+  /** Let hemera unload idle language models before ComfyUI loads a big one. */
+  public void setRoomMaker(java.util.function.LongConsumer maker)
+  {
+    roomMaker = maker;
+  }
+
+  /** Give back what an idle ComfyUI is holding. True if it had something to give. */
+  public boolean reclaimIfIdle()
+  {
+    if (!mayHoldModels || active.get() > 0)
+      return false;
+    try
+    {
+      mayHoldModels = false;
+      post("/free", Json.map("unload_models", Boolean.TRUE, "free_memory", Boolean.TRUE), 30);
+      Log.info("comfyui", "Unloaded ComfyUI's models to make room for another model");
+      return true;
+    }
+    catch (Exception e)
+    {
+      return false;
+    }
   }
 
   private void stopAndWait()

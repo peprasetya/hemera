@@ -158,6 +158,10 @@ public final class InstanceManager
     int port = freePort();
     String file = Config.expandUser(Json.str(model, "file", ""));
     String mmproj = Config.expandUser(Json.str(model, "mmproj", ""));
+    Runnable release = gpuReleaser;
+    if (release != null)
+      release.run();
+    makeRoom(name, estimate(model, file, mmproj));
 
     List<String> cmd = new ArrayList<>();
     cmd.add(bin);
@@ -324,6 +328,124 @@ public final class InstanceManager
       }
     }
     return java.util.Optional.empty();
+  }
+
+  /** Things outside this manager that hold memory and can give it back when idle (ComfyUI). */
+  private final List<java.util.function.BooleanSupplier> reclaimers = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+  private volatile Runnable gpuReleaser;
+
+  /** Called before an engine starts: lets ComfyUI step aside, since the two hang each other on a shared GPU. */
+  public void setGpuReleaser(Runnable releaser)
+  {
+    gpuReleaser = releaser;
+  }
+
+  /**
+   * Unload every engine so ComfyUI has the GPU to itself. An engine still answering a request is
+   * waited for rather than cut off.
+   */
+  public void clearGpu(long maxWaitSeconds)
+  {
+    long deadline = System.currentTimeMillis() + maxWaitSeconds * 1000;
+    while (instances.values().stream().anyMatch(i -> i.alive() && i.busy())
+        && System.currentTimeMillis() < deadline)
+      try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+    for (Instance i : List.copyOf(instances.values()))
+      if (!i.busy())
+      {
+        Log.info("instance", "Unloading '" + i.name + "' so ComfyUI has the GPU to itself");
+        stop(i.name);
+      }
+  }
+
+  public void addReclaimer(java.util.function.BooleanSupplier reclaimer)
+  {
+    reclaimers.add(reclaimer);
+  }
+
+  /** Bytes a model will want: its files, plus working memory for the context or the image being drawn. */
+  private long estimate(Map<String, Object> model, String file, String mmproj)
+  {
+    long mb = 1024L * 1024;
+    long total = size(file) + size(mmproj);
+    for (Object v : Json.obj(model.get("extraFiles")).values())
+      total += size(Config.expandUser(String.valueOf(v)));
+    boolean sd = "sd".equals(Engines.argStyle(cfg, Json.str(model, "engine", "llama.cpp")));
+    long extra = sd ? 8192 * mb : 2048 * mb;
+    return Json.num(model, "memoryMB", 0) > 0 ? Json.num(model, "memoryMB", 0) * mb : total + extra;
+  }
+
+  private static long size(String path)
+  {
+    try
+    {
+      return path.isEmpty() ? 0 : Files.size(Path.of(path));
+    }
+    catch (IOException e)
+    {
+      return 0;
+    }
+  }
+
+  /**
+   * Memory the GPU runtime and the kernel can still hand out. On a machine where the GPU shares
+   * system RAM the GPU's own counter is the tighter one, so the smaller of the two wins.
+   */
+  public static long available()
+  {
+    long avail = Long.MAX_VALUE;
+    try
+    {
+      for (String line : Files.readAllLines(Path.of("/proc/meminfo")))
+        if (line.startsWith("MemAvailable:"))
+          avail = Long.parseLong(line.replaceAll("[^0-9]", "")) * 1024;
+      try (var cards = Files.newDirectoryStream(Path.of("/sys/class/drm"), "card?"))
+      {
+        for (Path card : cards)
+        {
+          Path dev = card.resolve("device");
+          long total = Long.parseLong(Files.readString(dev.resolve("mem_info_gtt_total")).trim());
+          long used = Long.parseLong(Files.readString(dev.resolve("mem_info_gtt_used")).trim());
+          avail = Math.min(avail, total - used);
+        }
+      }
+    }
+    catch (IOException | RuntimeException ignored)
+    {
+    }
+    return avail;
+  }
+
+  /**
+   * Before a model loads, unload whatever is idle until it fits: the longest-idle model first,
+   * then ComfyUI's cached models. A model still serving a request is never touched, and if that
+   * is not enough hemera loads anyway and lets the kernel decide, as it did before.
+   */
+  public synchronized void makeRoom(String forModel, long need)
+  {
+    long mb = 1024L * 1024;
+    long reserve = Json.num(cfg.data(), "memoryReserveMB", 2048) * mb;
+    if (available() >= need + reserve)
+      return;
+    Log.info("instance", "'" + forModel + "' needs about " + need / (1024 * mb) + " GB, "
+        + available() / (1024 * mb) + " GB free: unloading idle models");
+    while (available() < need + reserve)
+    {
+      Instance victim = instances.values().stream()
+          .filter(i -> i.alive() && !i.busy() && !i.name.equals(forModel))
+          .min(Comparator.comparingLong(i -> i.lastUsed)).orElse(null);
+      if (victim != null)
+        stop(victim.name);
+      else if (reclaimers.stream().noneMatch(java.util.function.BooleanSupplier::getAsBoolean))
+      {
+        Log.warn("instance", "nothing idle left to unload for '" + forModel + "'; "
+            + available() / (1024 * mb) + " GB free, loading anyway");
+        return;
+      }
+      for (int i = 0; i < 20 && available() < need + reserve; i++) // the kernel frees pages a moment later
+        try { Thread.sleep(500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+    }
   }
 
   /**

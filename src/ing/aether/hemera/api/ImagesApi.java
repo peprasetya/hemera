@@ -156,8 +156,12 @@ public final class ImagesApi
     String name = ProxyDispatcher.resolveName(cfg, raw);
     if (cfg.findProxy(name) != null)
       throw new HttpError(400, "image editing is not supported for proxied models yet");
-    if (cfg.findModel(name) == null && comfy.find(raw) != null)
-      throw new HttpError(400, "model '" + raw + "' cannot edit images");
+    ComfyBridge.Offer offer = cfg.findModel(name) == null ? comfy.find(raw) : null;
+    if (offer != null)
+    {
+      comfyEdit(ex, offer, fields, files);
+      return;
+    }
     Map<String, Object> model = localModel(name, raw);
     fields.remove("model");
     boolean stream = takeStream(fields);
@@ -186,6 +190,37 @@ public final class ImagesApi
       return serve(inst, () -> Upstream.postBytes(
           "http://127.0.0.1:" + inst.port + "/v1/images/edits", payload,
           "multipart/form-data; boundary=" + outBoundary));
+    });
+  }
+
+  /** An edit on a ComfyUI model: the uploaded images become the recipe's image settings. */
+  private void comfyEdit(HttpExchange ex, ComfyBridge.Offer offer, Map<String, Object> fields,
+      List<Multipart.Part> files) throws Exception
+  {
+    if (!offer.recipe().hasParam("image"))
+      throw new HttpError(400, "model '" + offer.id() + "' cannot edit images");
+    Map<String, Object> req = new LinkedHashMap<>(fields);
+    req.remove("model");
+    boolean stream = takeStream(req);
+    String size = Json.str(req, "size", "auto");
+    String[] slots = {"image", "image_2", "image_3"};
+    for (int i = 0; i < files.size() && i < slots.length; i++)
+      if (offer.recipe().hasParam(slots[i]))
+        req.put(slots[i], files.get(i).data());
+    ComfyBridge.openAiFields(req, offer.recipe());
+    comfy.check(offer, req);
+
+    ImageJobs.Job job = jobs.create(ex.getRequestHeaders().getFirst(REQUEST_ID_HEADER), offer.id(), "edit");
+    ComfyBridge.Run run = comfy.newRun();
+    job.onCancel = run::cancel;
+    respond(ex, job, stream, "image_edit", size, false, j -> {
+      ComfyBridge.Output out = comfy.execute(offer, req, run);
+      String name = out.filename();
+      return Json.map(
+          "created", System.currentTimeMillis() / 1000,
+          "output_format", name.substring(name.lastIndexOf('.') + 1),
+          "seed", run.used().get("seed"),
+          "data", List.of(Json.map("b64_json", Base64.getEncoder().encodeToString(comfy.fetch(out)))));
     });
   }
 

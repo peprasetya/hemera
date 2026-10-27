@@ -79,6 +79,10 @@ public final class Hemera
     ModelRegistry registry = new ModelRegistry(cfg, im);
     ProxyDispatcher proxies = new ProxyDispatcher(cfg);
     ComfyBridge comfy = new ComfyBridge(cfg);
+    im.addReclaimer(comfy::reclaimIfIdle);
+    im.setGpuReleaser(comfy::releaseGpu);
+    comfy.setGpuClearer(im::clearGpu);
+    comfy.setRoomMaker(need -> im.makeRoom("ComfyUI", need));
 
     Router router = new Router();
     // Root: ollama clients probe "GET /" for the plain-text banner; browsers get the UI.
