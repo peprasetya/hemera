@@ -109,7 +109,7 @@ function paint(el, html) {
 
 // ---------------------------------------------------------------- navigation
 
-const SECTIONS = ["dashboard", "models", "engines", "images", "dirs", "proxies", "settings"];
+const SECTIONS = ["dashboard", "models", "engines", "images", "voices", "dirs", "proxies", "settings"];
 
 function currentSection() {
   const h = location.hash.replace("#", "");
@@ -128,6 +128,7 @@ async function navigate() {
     if (sec === "engines") await renderEngines();
     if (sec === "dirs") renderDirs();
     if (sec === "images") renderImages();
+    if (sec === "voices") await renderVoices();
     if (sec === "proxies") renderProxies();
     if (sec === "settings") renderSettings();
   } catch (e) { fail(e); }
@@ -1593,6 +1594,110 @@ function proxyForm(existing) {
     list.push(entry);
     CONFIG.proxies = list;
     try { await PUT("/hemera/api/config", CONFIG); closeModal(); toast("Proxy saved"); navigate(); } catch (e) { fail(e); }
+  };
+}
+
+// ---------------------------------------------------------------- voices
+
+/** True for a model that speaks text (text to speech on audio.cpp). */
+function isSpeechModel(m) {
+  return isAudiocppEngine(m.engine) && (m.task || "tts") === "tts";
+}
+
+async function renderVoices() {
+  const el = $("#sec-voices");
+  const voices = (await GET("/v1/audio/voices")).data || [];
+  const speakers = (CONFIG.models || []).filter(isSpeechModel);
+  const when = t => t ? new Date(t * 1000).toLocaleDateString() : "";
+  paint(el, `
+    <h2>Voice library</h2>
+    <div class="card">
+      <h3>Voices</h3>
+      <div class="tablewrap"><table>
+        <tr><th>Name</th><th>Recording</th><th>Whose voice, and consent</th><th>What is said in it</th><th></th></tr>
+        ${voices.map(v => `<tr>
+          <td class="mono">${esc(v.id)}<div class="small muted">${esc(when(v.created_at))}</div></td>
+          <td><audio controls preload="none" src="/v1/audio/voices/${encodeURIComponent(v.id)}/audio"></audio>
+              <div class="small muted">${v.duration_sec != null ? esc(v.duration_sec) + " s" : ""}</div></td>
+          <td class="small">${v.owner ? "<b>" + esc(v.owner) + "</b><br>" : ""}${esc(v.consent || "")}</td>
+          <td class="small">${esc(v.transcript || "")}</td>
+          <td><button class="btn danger xs" data-vdel="${esc(v.id)}">Delete</button></td>
+        </tr>`).join("") || '<tr><td colspan="5" class="muted">No voices yet.</td></tr>'}
+      </table></div>
+      <p class="small muted">Every speech model that clones can speak in these voices by name
+      (<span class="mono">"voice"</span> in <span class="mono">/v1/audio/speech</span>), and the voice changer can
+      turn someone's speech into them.</p>
+    </div>
+    <div class="card">
+      <h3>Add a voice</h3>
+      <div class="formgrid">
+        <div><label>Name (lowercase letters, digits, - and _)</label>
+          <input type="text" id="vf-name" class="mono" placeholder="maria"></div>
+        <div><label>Recording (5–20 s of one person speaking naturally)</label>
+          <input type="file" id="vf-file" accept="audio/*,video/*"></div>
+        <div class="full"><label>Consent — whose voice it is and that they agreed to it being cloned</label>
+          <input type="text" id="vf-consent" placeholder="recorded with Maria's permission for the parish announcements"></div>
+        <div><label>Owner (optional)</label>
+          <input type="text" id="vf-owner" placeholder="Maria"></div>
+        <div><label>Language of the recording (optional, e.g. id, en)</label>
+          <input type="text" id="vf-lang" class="mono"></div>
+        <div class="full"><label>What is said in the recording (optional — written automatically when empty)</label>
+          <textarea id="vf-transcript"></textarea></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="vf-add">Add voice</button></div>
+    </div>
+    <div class="card">
+      <h3>Try a voice</h3>
+      ${speakers.length ? `<div class="formgrid">
+        <div><label>Speech model</label>
+          <select id="vt-model">${speakers.map(m => `<option>${esc(m.name)}</option>`).join("")}</select></div>
+        <div><label>Voice</label>
+          <select id="vt-voice"><option value="">(the model's default)</option>
+            ${voices.map(v => `<option>${esc(v.id)}</option>`).join("")}</select></div>
+        <div class="full"><label>Text</label>
+          <textarea id="vt-text">Selamat pagi semuanya, terima kasih sudah hadir. Good morning, and welcome.</textarea></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="vt-say">Speak</button>
+        <audio id="vt-audio" controls></audio>
+      </div>` : '<p class="muted">No speech model is configured.</p>'}
+    </div>`);
+
+  $$("[data-vdel]", el).forEach(b => b.onclick = async () => {
+    if (!confirm("Delete the voice '" + b.dataset.vdel + "' and its recording?")) return;
+    try { await DEL("/v1/audio/voices/" + encodeURIComponent(b.dataset.vdel)); toast("Voice deleted"); renderVoices(); }
+    catch (e) { fail(e); }
+  });
+  $("#vf-add").onclick = async () => {
+    const file = $("#vf-file").files[0];
+    if (!file) { toast("choose a recording", true); return; }
+    const form = new FormData();
+    form.append("name", $("#vf-name").value.trim().toLowerCase());
+    form.append("file", file, file.name);
+    form.append("consent", $("#vf-consent").value.trim());
+    for (const [k, id] of [["owner", "#vf-owner"], ["language", "#vf-lang"], ["transcript", "#vf-transcript"]]) {
+      const v = $(id).value.trim();
+      if (v) form.append(k, v);
+    }
+    const btn = $("#vf-add");
+    btn.disabled = true; btn.textContent = "Adding…";
+    try { const v = await postForm("/v1/audio/voices", form); toast("Voice '" + v.id + "' added"); renderVoices(); }
+    catch (e) { fail(e); btn.disabled = false; btn.textContent = "Add voice"; }
+  };
+  if (speakers.length) $("#vt-say").onclick = async () => {
+    const btn = $("#vt-say");
+    btn.disabled = true; btn.textContent = "Speaking…";
+    try {
+      const body = { model: $("#vt-model").value, input: $("#vt-text").value, response_format: "wav" };
+      if ($("#vt-voice").value) body.voice = $("#vt-voice").value;
+      const resp = await fetch("/v1/audio/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!resp.ok) throw new Error(((await resp.json().catch(() => null)) || {}).error || "speech failed: " + resp.status);
+      const audio = $("#vt-audio");
+      if (audio.src) URL.revokeObjectURL(audio.src);
+      audio.src = URL.createObjectURL(await resp.blob());
+      audio.play().catch(() => {});
+    } catch (e) { fail(e); }
+    btn.disabled = false; btn.textContent = "Speak";
   };
 }
 

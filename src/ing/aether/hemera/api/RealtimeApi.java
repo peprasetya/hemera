@@ -65,7 +65,15 @@ public final class RealtimeApi
     // needs none but must still pick one, and "realtime" is the one they all offer.
     try (WebSocket ws = WebSocket.accept(ex, "realtime"))
     {
-      new Session(ws, query).run();
+      Runnable done = audio.live.enter("transcription session");
+      try
+      {
+        new Session(ws, query).run();
+      }
+      finally
+      {
+        done.run();
+      }
     }
   }
 

@@ -118,6 +118,20 @@ public final class Engines
         && "tts".equals(Json.str(model, "task", "tts"));
   }
 
+  /** A speaker-separation model: who spoke when, on an audio.cpp-style engine. */
+  public static boolean isDiarizationModel(Config cfg, Map<String, Object> model)
+  {
+    return "audiocpp".equals(argStyle(cfg, Json.str(model, "engine", "llama.cpp")))
+        && "diar".equals(Json.str(model, "task", "tts"));
+  }
+
+  /** A voice-conversion model: speech in, the same speech in another voice out. */
+  public static boolean isVoiceChangerModel(Config cfg, Map<String, Object> model)
+  {
+    return "audiocpp".equals(argStyle(cfg, Json.str(model, "engine", "llama.cpp")))
+        && "vc".equals(Json.str(model, "task", "tts"));
+  }
+
   /** Refuse to route a chat/completion/embedding request to an image or speech model with a useful message. */
   public static void requireTextModel(Config cfg, Map<String, Object> model)
   {
@@ -130,6 +144,12 @@ public final class Engines
     if (isSpeechModel(cfg, model))
       throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is a text-to-speech model — "
           + "use POST /v1/audio/speech");
+    if (isDiarizationModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' tells speakers apart — ask a speech-"
+          + "recognition model for response_format=diarized_json and hemera uses it");
+    if (isVoiceChangerModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' changes voices — connect to the "
+          + "/v1/audio/voice-changer WebSocket");
   }
 
   /** The speech endpoint only makes sense against a text-to-speech entry on audio.cpp. */

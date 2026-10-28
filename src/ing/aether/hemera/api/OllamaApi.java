@@ -145,6 +145,10 @@ public final class OllamaApi
       return new ArrayList<>(List.of("transcription"));
     if (ing.aether.hemera.engine.Engines.isSpeechModel(cfg, m))
       return new ArrayList<>(List.of("speech"));
+    if (ing.aether.hemera.engine.Engines.isDiarizationModel(cfg, m))
+      return new ArrayList<>(List.of("diarization"));
+    if (ing.aether.hemera.engine.Engines.isVoiceChangerModel(cfg, m))
+      return new ArrayList<>(List.of("voice-changer"));
     List<Object> caps = new ArrayList<>(List.of("completion", "tools"));
     if (!Json.str(m, "mmproj", "").isEmpty() || Json.bool(meta, "hemera.vision", false))
       caps.add("vision");

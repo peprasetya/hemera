@@ -11,6 +11,7 @@ import ing.aether.hemera.api.OpenAiApi;
 import ing.aether.hemera.api.ProxyDispatcher;
 import ing.aether.hemera.api.RealtimeApi;
 import ing.aether.hemera.api.SpeechApi;
+import ing.aether.hemera.api.VoiceChangerApi;
 import ing.aether.hemera.comfy.ComfyBridge;
 import ing.aether.hemera.config.Config;
 import ing.aether.hemera.engine.InstanceManager;
@@ -102,6 +103,7 @@ public final class Hemera
     AudioApi audio = new AudioApi(cfg, im, router);
     new RealtimeApi(audio, router);
     new SpeechApi(cfg, im, audio, router);
+    new VoiceChangerApi(cfg, im, audio, router);
     new ClaudeApi(cfg, im, proxies, router);
     new AdminApi(cfg, im, registry, comfy, router);
     new StaticFiles(router);

@@ -1,6 +1,7 @@
 package ing.aether.hemera.api;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,11 +30,12 @@ public final class AudioApi
 {
   private final Config cfg;
   private final InstanceManager im;
+  final LiveGate live = new LiveGate();
 
   /** Passed through as they are; everything else OpenAI defines is accepted and dropped. */
   private static final Set<String> FORWARDED = Set.of("language", "prompt", "response_format", "temperature");
 
-  private static final Set<String> FORMATS = Set.of("json", "text", "srt", "vtt", "verbose_json");
+  private static final Set<String> FORMATS = Set.of("json", "text", "srt", "vtt", "verbose_json", "diarized_json");
 
   public AudioApi(Config cfg, InstanceManager im, Router router)
   {
@@ -50,6 +52,7 @@ public final class AudioApi
       throw new HttpError(400, "send the audio as multipart/form-data, with the recording in a 'file' field");
     Multipart.Part audio = null;
     String raw = null;
+    boolean diarize = false;
     List<Multipart.Part> out = new ArrayList<>();
     for (Multipart.Part p : Multipart.parse(Router.readBytes(ex), boundary))
     {
@@ -65,6 +68,12 @@ public final class AudioApi
         // translations always end in English; the spoken language is whisper's to detect
         if (translate && "language".equals(p.name()))
           continue;
+        // who said it comes from a separate model, and each speaker's turn is transcribed alone
+        if ("response_format".equals(p.name()) && "diarized_json".equals(p.value().trim()))
+        {
+          diarize = true;
+          continue;
+        }
         out.add(Multipart.Part.field(p.name(), p.value().trim()));
       }
     }
@@ -93,8 +102,19 @@ public final class AudioApi
     String fileName = audio.fileName().isBlank() ? "audio" : audio.fileName();
     out.add(Multipart.Part.file("file", fileName, audio.contentType(), audio.data()));
 
+    if (diarize)
+    {
+      if (translate)
+        throw new HttpError(400, "diarized_json is for transcriptions, not translations");
+      live.awaitTurn(ex, "speaker-labelled transcription on '" + name + "'");
+      String language = out.stream().filter(p -> "language".equals(p.name())).map(Multipart.Part::value).findFirst().orElse(null);
+      String prompt = out.stream().filter(p -> "prompt".equals(p.name())).map(Multipart.Part::value).findFirst().orElse("");
+      Router.sendJson(ex, 200, diarized(model, audio.data(), language, prompt));
+      return;
+    }
     String outBoundary = Multipart.randomBoundary();
     byte[] payload = Multipart.write(out, outBoundary);
+    live.awaitTurn(ex, (translate ? "translation" : "transcription") + " on '" + name + "'");
     Instance inst = im.ensure(model);
     Upstream.Raw reply;
     inst.beginRequest();
@@ -110,6 +130,120 @@ public final class AudioApi
     String format = out.stream().filter(p -> "response_format".equals(p.name())).map(Multipart.Part::value)
         .findFirst().orElse("json");
     Router.sendBytes(ex, 200, tidy(format, reply.body()), reply.contentType());
+  }
+
+  // ---- speaker labels -------------------------------------------------------------
+
+  /** One stretch of one speaker, in seconds. */
+  private record Turn(double start, double end, String speaker)
+  {
+  }
+
+  /**
+   * OpenAI's diarized_json. The speaker-separation model says who spoke when; each speaker's turn
+   * (neighbouring turns of one speaker joined) is then transcribed on its own. Transcribing per turn rather than labelling one long transcript
+   * afterwards keeps every word with its speaker: whisper's own timestamps drift by seconds
+   * across pauses, exactly where speakers change.
+   */
+  private Map<String, Object> diarized(Map<String, Object> model, byte[] recording, String language, String prompt)
+      throws Exception
+  {
+    short[] pcm;
+    if (SpeechApi.hasFfmpeg())
+      pcm = Pcm.fromLittleEndian(SpeechApi.ffmpeg(recording, List.of("-ac", "1", "-ar", "16000", "-f", "s16le")));
+    else if (Pcm.wavRate(recording) == 16000)
+      pcm = Pcm.fromLittleEndian(java.util.Arrays.copyOfRange(recording, 44, recording.length));
+    else
+      throw new HttpError(400, "speaker labels need ffmpeg on the server, or a 16 kHz mono WAV recording");
+
+    List<Turn> turns = join(speakerTurns(model, Pcm.wav(pcm, 16000)));
+    Map<String, String> labels = new LinkedHashMap<>();
+    List<Object> segments = new ArrayList<>();
+    StringBuilder text = new StringBuilder();
+    for (Turn t : turns)
+    {
+      int from = Math.max(0, (int) ((t.start() - 0.1) * 16000));
+      int to = Math.min(pcm.length, (int) ((t.end() + 0.1) * 16000));
+      if (to - from < 16000 / 4)
+        continue;
+      // only the client's prompt: whisper copies the style of what it is given, so one turn
+      // that came back without punctuation would take the punctuation out of all that follow
+      String said = transcribe(model, Pcm.wav(java.util.Arrays.copyOfRange(pcm, from, to), 16000), language, prompt);
+      if (said.isBlank())
+        continue;
+      String label = labels.computeIfAbsent(t.speaker(), k -> label(labels.size()));
+      segments.add(Json.map("type", "transcript.text.segment", "id", "seg_" + segments.size(),
+          "start", Math.round(t.start() * 100) / 100.0, "end", Math.round(t.end() * 100) / 100.0,
+          "text", said, "speaker", label));
+      text.append(text.length() == 0 ? "" : " ").append(said);
+    }
+    return Json.map("task", "transcribe", "duration", Math.round(pcm.length / 16.0) / 1000.0,
+        "text", text.toString(), "segments", segments);
+  }
+
+  /** Neighbouring turns of the same speaker, less than a second apart, are one turn. */
+  private static List<Turn> join(List<Turn> turns)
+  {
+    List<Turn> sorted = new ArrayList<>(turns);
+    sorted.sort(java.util.Comparator.comparingDouble(Turn::start));
+    List<Turn> out = new ArrayList<>();
+    for (Turn t : sorted)
+    {
+      Turn last = out.isEmpty() ? null : out.get(out.size() - 1);
+      if (last != null && last.speaker().equals(t.speaker()) && t.start() - last.end() < 1.0)
+        out.set(out.size() - 1, new Turn(last.start(), Math.max(last.end(), t.end()), last.speaker()));
+      else
+        out.add(t);
+    }
+    return out;
+  }
+
+  /**
+   * Who spoke when, from the speaker-separation model: the one the speech model names as its
+   * "diarizer", or else the first configured. It takes 16 kHz mono WAV.
+   */
+  private List<Turn> speakerTurns(Map<String, Object> model, byte[] wav) throws Exception
+  {
+    Map<String, Object> diarizer = null;
+    String wanted = Json.str(model, "diarizer", null);
+    for (Map<String, Object> m : cfg.models())
+      if (Engines.isDiarizationModel(cfg, m) && (wanted == null || wanted.equals(Json.str(m, "name", null))))
+      {
+        diarizer = m;
+        break;
+      }
+    if (diarizer == null)
+      throw new HttpError(400, wanted != null ? "the diarizer '" + wanted + "' is not a configured speaker-separation model"
+          : "diarized_json needs a speaker-separation model (an audio.cpp model with \"task\": \"diar\") — none is configured");
+    String name = Json.str(diarizer, "name", "?");
+    String boundary = Multipart.randomBoundary();
+    byte[] payload = Multipart.write(List.of(Multipart.Part.field("model", name),
+        Multipart.Part.file("file", "speech.wav", "audio/wav", wav)), boundary);
+    Instance inst = im.ensure(diarizer);
+    Map<String, Object> result;
+    inst.beginRequest();
+    try
+    {
+      result = Json.parseObj(new String(Upstream.postBytesRaw("http://127.0.0.1:" + inst.port
+          + "/v1/audio/transcriptions/details", payload, "multipart/form-data; boundary=" + boundary).body(),
+          java.nio.charset.StandardCharsets.UTF_8));
+    }
+    finally
+    {
+      inst.endRequest();
+    }
+    double rate = Json.numd(result, "sample_rate", 16000);
+    List<Turn> turns = new ArrayList<>();
+    for (Map<String, Object> t : Json.arrOfObj(result.get("speaker_turns")))
+      turns.add(new Turn(Json.numd(t, "start_sample", 0) / rate, Json.numd(t, "end_sample", 0) / rate,
+          Json.str(t, "speaker_id", "?")));
+    return turns;
+  }
+
+  /** A, B, ... Z, then AA, AB, ... */
+  private static String label(int i)
+  {
+    return i < 26 ? String.valueOf((char) ('A' + i)) : label(i / 26 - 1) + (char) ('A' + i % 26);
   }
 
   /**

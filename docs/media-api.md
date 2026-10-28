@@ -1,4 +1,4 @@
-# hemera media API — images, video, 3D, speech recognition and text to speech
+# hemera media API — images, video, 3D and speech
 
 Written for whoever builds a client on top of hemera (aether.ing first). It is self-contained:
 everything a client needs to discover what a hemera server can generate and to drive it.
@@ -52,7 +52,7 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
 
 | `hemera` field | Meaning |
 |---|---|
-| `kind` | `text`, `image`, `video`, `3d`, `transcription` (speech to text) or `speech` (text to speech) — what the model does. Group models by this. |
+| `kind` | `text`, `image`, `video`, `3d`, `transcription` (speech to text), `speech` (text to speech), `voice-changer`, or `diarization` (tells speakers apart; used through `transcription`) — what the model does. Group models by this. |
 | `endpoint` | Where to send a generation request for this model. |
 | `backend` | `llama.cpp`, `sd.cpp`, `proxy`, `comfyui`, … Informational. |
 | `family`, `title`, `description` | ComfyUI models only. `title` and `description` are fit to show to a user. |
@@ -87,6 +87,8 @@ For clients built on the Ollama API. Entries have Ollama's usual fields, and eve
 | `3d` | generates 3D meshes |
 | `transcription` | turns speech into text |
 | `speech` | turns text into speech |
+| `voice-changer` | changes a voice live |
+| `diarization` | tells speakers apart (used by `diarized_json`) |
 
 A chat client should offer only models whose capabilities include `completion`. The `hemera`
 object is identical to the one in `/v1/models` and is present for ComfyUI models. Generation
@@ -243,7 +245,7 @@ OpenAI's Audio API. Any OpenAI SDK works by pointing its base URL at hemera.
 | `model` | A model whose `hemera.kind` is `transcription`. |
 | `language` | ISO-639-1 (`id`, `en`, `ja`, …). Leave it out to have it detected; give it when you know it, which is faster and avoids a wrong guess on short clips. |
 | `prompt` | Text the speech is likely to follow or contain: the conversation so far, names, jargon. It steers spelling and vocabulary, not content. Whisper reads only its last ~220 tokens (roughly 150 words), so put the most relevant text last. |
-| `response_format` | `json` (default, `{"text": "..."}`), `text`, `srt`, `vtt` or `verbose_json` (language, duration, segments with timings and words). |
+| `response_format` | `json` (default, `{"text": "..."}`), `text`, `srt`, `vtt`, `verbose_json` (language, duration, segments with timings and words) or `diarized_json` (who said what — below). |
 | `temperature` | `0` for the most literal result. |
 
 `stream`, `timestamp_granularities[]` and `include[]` are accepted and ignored: the answer always
@@ -265,6 +267,25 @@ const { text } = await (await fetch(base + "/v1/audio/transcriptions", { method:
 For dictation, send one utterance per request (cut at the pause), not a running recording: a
 few seconds of speech comes back in about a third of a second once the model is loaded. Long
 recordings work too; a 21-minute file takes about half a minute.
+
+### Who said what — `response_format=diarized_json`
+
+OpenAI's speaker-labelled transcript, for meetings and interviews:
+
+```json
+{ "task": "transcribe", "duration": 81.3, "text": "Madagaskar sejauh ini ... Jika Anda ingin ...",
+  "segments": [
+    { "type": "transcript.text.segment", "id": "seg_0", "start": 0.92, "end": 7.52, "speaker": "A",
+      "text": "Madagaskar sejauh ini adalah yang benua terbesar dan tersendiri dalam hal satwa liar." },
+    { "type": "transcript.text.segment", "id": "seg_1", "start": 11.65, "end": 21.83, "speaker": "B",
+      "text": "Jika Anda ingin berada dekat dengan pertunjukannya, maka Anda harus datang lebih awal ..." } ] }
+```
+
+Speakers are `A`, `B`, `C`, … in the order they first speak, up to eight. A separate model finds
+who spoke when, and each speaker's turn is then transcribed on its own, so a sentence is never
+split across two people. Labels are per recording: the same person can be `A` in one and `B` in
+the next. An 80-second recording takes about 4 s; send the whole meeting, not pieces of it, so
+the labels stay consistent. `language` and `prompt` (a glossary of names and terms) apply to every turn.
 
 ### Live — `/v1/realtime` (WebSocket)
 
@@ -374,8 +395,51 @@ DELETE /v1/audio/voices/{name}
   `"recorded with Maria's permission for the parish announcements"`. It is stored with the voice
   and shown in the list.
 - `name` is lowercase letters, digits, `-` and `_`, and cannot be one of OpenAI's voice names.
+- The web UI's **Voices** tab does the same by hand: upload, listen, delete, and try a voice.
 
-## 7. A client loop for video and 3D
+### Live voice changing — `/v1/audio/voice-changer` (WebSocket)
+
+Someone speaks; the same words come out in a voice from the library, about 0.1–0.15 s later.
+There is no OpenAI API for this, so the protocol is hemera's:
+
+```js
+const ws = new WebSocket("ws://host:12434/v1/audio/voice-changer?model=meanvc2&voice=maria&sample_rate=48000");
+ws.binaryType = "arraybuffer";
+micNode.port.onmessage = e => ws.send(e.data);            // Int16Array frames, 20–100 ms each
+ws.onmessage = e => typeof e.data === "string"
+  ? console.log(JSON.parse(e.data))                        // session.created / session.updated / error
+  : speakerNode.port.postMessage(new Int16Array(e.data));  // the converted audio, same format
+// change voice without reconnecting:
+ws.send(JSON.stringify({ type: "session.update", voice: "narrator" }));
+```
+
+| | |
+|---|---|
+| `model` | A model whose `hemera.kind` is `voice-changer` (the first one if left out). |
+| `voice` | A name from the voice library. Required. |
+| `sample_rate` | Of the audio you send and get back: 8000–48000, default 24000. |
+| Audio | Binary messages, 16-bit little-endian mono PCM, both ways. |
+
+It works for any language. A browser can only open the microphone on an `https://` or
+`localhost` page.
+
+## 7. Live work first
+
+A call, a dictation or a voice being changed cannot wait; a long subtitle job can. Mark bulk
+requests with a header:
+
+```
+X-Hemera-Priority: background
+```
+
+While any live session is open (a `/v1/realtime` or voice-changer socket, or a streamed
+`/v1/audio/speech`), hemera holds background requests before they start and lets them go when the
+last live session ends. A request that is already running finishes first, so a job that sends
+its work in pieces of a few seconds pauses within one piece. Requests without the header are
+never held: a dictation sent to `/v1/audio/transcriptions` goes straight through during a call.
+Give background requests a long client timeout; they may wait as long as a call lasts.
+
+## 8. A client loop for video and 3D
 
 ```js
 async function generate(base, endpoint, form, onProgress) {
@@ -395,7 +459,7 @@ async function generate(base, endpoint, form, onProgress) {
 `endpoint` is the model's `hemera.endpoint`; `form` is a `FormData` with `model` plus the fields
 built from `hemera.parameters`.
 
-## 8. Things worth knowing
+## 9. Things worth knowing
 
 - **One at a time.** The machine has one GPU. Jobs for the same model queue inside hemera, jobs
   for different ComfyUI models queue inside ComfyUI; either way a job reports `queued` until it

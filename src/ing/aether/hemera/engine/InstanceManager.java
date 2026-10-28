@@ -241,13 +241,19 @@ public final class InstanceManager
           "mode", Json.str(model, "mode", "offline"));
       if (Json.str(model, "family", "").isEmpty())
         throw new HttpError(400, "model '" + name + "' needs a \"family\" (audio.cpp's model family, e.g. voxcpm2)");
-      for (String k : List.of("load_options", "session_options", "default_request_options"))
+      for (String k : List.of("load_options", "session_options", "default_request_options", "live_ingest"))
         if (model.get(k) instanceof Map<?, ?> m && !m.isEmpty())
           entry.put(k, m);
+      // a voice changer runs as long as someone talks through it, and goes quiet while they
+      // are muted: audio.cpp's limits for a dictation (10 min, 30 s of silence) would cut it off
+      if ("vc".equals(entry.get("task")) && !entry.containsKey("live_ingest"))
+        entry.put("live_ingest", Json.map("total_timeout_ms", 0, "idle_timeout_ms", 0));
       Path conf = cfg.home.resolve("run").resolve(name.replaceAll("[^A-Za-z0-9._-]", "_") + ".audiocpp.json");
       Files.createDirectories(conf.getParent());
+      // the voice library doubles as audio.cpp's, so live voice conversion can name a voice
       Files.writeString(conf, Json.writePretty(Json.map("host", "127.0.0.1", "port", port,
-          "lazy_load", false, "models", List.of(entry))));
+          "lazy_load", false, "voice_dir", cfg.resolve(Json.str(cfg.data(), "voicesDir", "voices")).toString(),
+          "models", List.of(entry))));
       cmd.add("--config");
       cmd.add(conf.toString());
       cmd.add("--host");

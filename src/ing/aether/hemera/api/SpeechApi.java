@@ -104,24 +104,34 @@ public final class SpeechApi
       throw new HttpError(400, "response_format '" + format + "' needs ffmpeg on the server — ask for wav or pcm");
 
     Map<String, Object> up = upstreamRequest(name, model, body, input);
-    Instance inst = im.ensure(model);
-    inst.beginRequest();
+    audio.live.awaitTurn(ex, "speech on '" + name + "'");
+    // someone is listening as it is made: that is live work, and background work waits for it
+    Runnable liveDone = streamFormat != null && !LiveGate.background(ex) ? audio.live.enter("streamed speech") : () -> {};
     try
     {
-      String url = "http://127.0.0.1:" + inst.port + "/v1/audio/speech";
-      if (streamFormat == null)
+      Instance inst = im.ensure(model);
+      inst.beginRequest();
+      try
       {
-        byte[] wav = Upstream.postJsonRaw(url, up).body();
-        Router.sendBytes(ex, 200, convert(wav, format), CONTENT_TYPES.get(format));
+        String url = "http://127.0.0.1:" + inst.port + "/v1/audio/speech";
+        if (streamFormat == null)
+        {
+          byte[] wav = Upstream.postJsonRaw(url, up).body();
+          Router.sendBytes(ex, 200, convert(wav, format), CONTENT_TYPES.get(format));
+        }
+        else if ("streaming".equals(Json.str(model, "mode", "offline")))
+          relayStream(ex, inst, url, up, "sse".equals(streamFormat));
+        else
+          sendWhole(ex, Upstream.postJsonRaw(url, up).body(), "sse".equals(streamFormat));
       }
-      else if ("streaming".equals(Json.str(model, "mode", "offline")))
-        relayStream(ex, inst, url, up, "sse".equals(streamFormat));
-      else
-        sendWhole(ex, Upstream.postJsonRaw(url, up).body(), "sse".equals(streamFormat));
+      finally
+      {
+        inst.endRequest();
+      }
     }
     finally
     {
-      inst.endRequest();
+      liveDone.run();
     }
   }
 
@@ -282,38 +292,41 @@ public final class SpeechApi
     return ffmpeg(wav, args);
   }
 
+  /**
+   * Run ffmpeg over a recording. The input goes through a temporary file, not a pipe: an M4A
+   * from a phone keeps its index at the end, which ffmpeg cannot seek back to in a pipe.
+   */
   static byte[] ffmpeg(byte[] in, List<String> outputArgs) throws Exception
   {
-    List<String> cmd = new ArrayList<>(List.of("ffmpeg", "-hide_banner", "-loglevel", "error", "-i", "pipe:0"));
-    cmd.addAll(outputArgs);
-    cmd.add("pipe:1");
-    Process p = new ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.PIPE).start();
-    Thread feeder = Thread.ofVirtual().start(() -> {
-      try (OutputStream os = p.getOutputStream())
-      {
-        os.write(in);
-      }
-      catch (IOException ignored)
-      {
-        // ffmpeg stopped reading; its exit status says why
-      }
-    });
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    Thread errors = Thread.ofVirtual().start(() -> {
-      try
-      {
-        p.getErrorStream().transferTo(err);
-      }
-      catch (IOException ignored)
-      {
-      }
-    });
-    byte[] out = p.getInputStream().readAllBytes();
-    feeder.join();
-    errors.join();
-    if (p.waitFor() != 0)
-      throw new HttpError(500, "ffmpeg could not convert the audio: " + err.toString(StandardCharsets.UTF_8).strip());
-    return out;
+    Path tmp = Files.createTempFile("hemera-audio-", ".in");
+    try
+    {
+      Files.write(tmp, in);
+      List<String> cmd = new ArrayList<>(List.of("ffmpeg", "-hide_banner", "-loglevel", "error", "-i", tmp.toString()));
+      cmd.addAll(outputArgs);
+      cmd.add("pipe:1");
+      Process p = new ProcessBuilder(cmd).redirectInput(ProcessBuilder.Redirect.from(new java.io.File("/dev/null"))).start();
+      ByteArrayOutputStream err = new ByteArrayOutputStream();
+      Thread errors = Thread.ofVirtual().start(() -> {
+        try
+        {
+          p.getErrorStream().transferTo(err);
+        }
+        catch (IOException ignored)
+        {
+        }
+      });
+      byte[] out = p.getInputStream().readAllBytes();
+      errors.join();
+      if (p.waitFor() != 0 || out.length == 0)
+        throw new HttpError(400, "ffmpeg could not read the audio: "
+            + (err.size() > 0 ? err.toString(StandardCharsets.UTF_8).strip() : "no audio in it"));
+      return out;
+    }
+    finally
+    {
+      Files.deleteIfExists(tmp);
+    }
   }
 
   private static volatile Boolean ffmpeg;

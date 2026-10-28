@@ -198,6 +198,11 @@ public final class WebSocket implements Closeable
     send(0x1, text.getBytes(StandardCharsets.UTF_8));
   }
 
+  public void sendBinary(byte[] data) throws IOException
+  {
+    send(0x2, data);
+  }
+
   /** Frames from several threads must not interleave, so sending is one frame at a time. */
   private synchronized void send(int op, byte[] payload) throws IOException
   {

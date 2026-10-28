@@ -75,6 +75,9 @@ third-party assets, follows your OS light/dark theme, works on phone and desktop
   installed yourself, such as ds4.
 - **Images** — try an image model without writing a curl command: generate, edit with
   reference images, stop a generation.
+- **Voices** — the voice library: listen to each recording, see whose voice it is and the consent
+  it was given under, add a voice by uploading a recording, delete one, and hear any speech
+  model say a sentence in any voice.
 - **Directories** — model search paths, including ollama repositories, and where ComfyUI is:
   what hemera found there, which models it offers from it, and what is missing for the rest.
 - **Proxies** — external providers exposed as local model names.
@@ -172,13 +175,13 @@ editable under Settings; `libraryAutoDetect: false` turns the search off entirel
 |---|---|
 | Ollama | `/api/tags` `/api/ps` `/api/show` `/api/chat` `/api/generate` `/api/embed` `/api/delete` `/api/stop` `/api/version` |
 | OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/audio/speech` `/v1/realtime` (transcription) |
-| hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint), `/v1/audio/voices` (the voice library); see [docs/media-api.md](docs/media-api.md) |
+| hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint), `/v1/audio/voices` (the voice library), `/v1/audio/voice-changer` (WebSocket); see [docs/media-api.md](docs/media-api.md) |
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
 
 **What is each model for?** A server now holds chat models next to image, video, 3D and speech ones, and
 neither OpenAI's nor Ollama's model list has a field for that, so hemera adds one to each, in
 that dialect's own style. `/v1/models` entries carry a `hemera` object — `kind` (`text`, `image`,
-`video`, `3d`, `transcription`, `speech`), the `endpoint` to call, and for ComfyUI models their request `parameters`, enough
+`video`, `3d`, `transcription`, `speech`, `voice-changer`, `diarization`), the `endpoint` to call, and for ComfyUI models their request `parameters`, enough
 to generate a form. `/api/tags` and `/api/show` carry Ollama's `capabilities` list, with `image`,
 `video`, `3d`, `transcription` and `speech` added to its `completion` / `tools` / `vision`: a chat client offers the models
 that have `completion` and ignores the rest. Asking a model for the wrong thing is answered with
@@ -490,6 +493,51 @@ by whisper-large-v3:
 
 Most of those "errors" are the recogniser writing numbers as digits; English and Indonesian came
 back word-perfect, including Indonesian–English mixtures. Latin ("Kyrie") is the weak spot.
+
+### Who said what
+
+`response_format=diarized_json` on `/v1/audio/transcriptions` gives OpenAI's speaker-labelled
+transcript. It needs a speaker-separation model on audio.cpp, such as NVIDIA's Nemotron 3
+Diarization (up to eight speakers, OpenMDW license, 190 MB):
+
+```json
+{ "name": "nemotron-diarization", "engine": "audio.cpp", "family": "nemotron_3_diar", "task": "diar",
+  "file": "/path/to/nemotron-3-diarization-bf16.gguf" }
+```
+
+hemera asks it who spoke when, then transcribes each speaker's turn on its own with the speech
+model the request named, and labels the speakers A, B, C... Transcribing per turn rather than
+labelling one long transcript afterwards is deliberate: whisper's word timestamps drift by
+seconds across pauses, which is exactly where speakers change. A speech model can name its
+partner with `"diarizer": "<model>"`; otherwise the first one configured is used. An
+80-second, two-speaker recording takes under 4 s.
+
+### Voice changer
+
+`/v1/audio/voice-changer` is a WebSocket: 16-bit PCM in, the same speech in a library voice out.
+It runs on an audio.cpp voice-conversion model in streaming mode, such as MeanVC2 (zero-shot, so
+any library voice works; Apache-2.0; 1.5 GB):
+
+```json
+{ "name": "meanvc2", "engine": "audio.cpp", "family": "meanvc2", "task": "vc", "mode": "streaming",
+  "file": "/path/to/meanvc2-120ms-40ms-fp32.gguf" }
+```
+
+audio.cpp's live endpoint streams a chunked request body and the converted audio back on one
+connection at once, which the JDK's HTTP client cannot do, so hemera speaks that HTTP itself over
+a socket. It points audio.cpp's own voice folder at hemera's library, which is how a live session
+names its voice, and lifts audio.cpp's ten-minute and thirty-second-silence limits for voice
+changers (`live_ingest` on the model overrides). `outputSampleRate` on the model is the rate it
+speaks at (MeanVC2: 16000, the default); hemera converts to and from the client's rate. Measured
+at 48 kHz: the converted voice runs 0.11 s behind the speaker (median), 0.15 s at p90.
+
+### Live work first
+
+Clients mark bulk requests with `X-Hemera-Priority: background`. While anything live is running —
+a `/v1/realtime` transcription, a voice changer, a streamed `/v1/audio/speech` — those requests
+wait before they start, and go once the last live session ends; one already running finishes.
+A subtitle job that sends its film a piece at a time therefore pauses within seconds of a call
+starting. Unmarked requests are never held.
 
 ## Memory
 
