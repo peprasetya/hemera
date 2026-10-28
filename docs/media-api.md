@@ -1,4 +1,4 @@
-# hemera media API — images, video and 3D
+# hemera media API — images, video, 3D and speech
 
 Written for whoever builds a client on top of hemera (aether.ing first). It is self-contained:
 everything a client needs to discover what a hemera server can generate and to drive it.
@@ -29,6 +29,9 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
     { "id": "qwen-image-2.1", "object": "model", "created": 1791656743, "owned_by": "hemera",
       "hemera": { "kind": "image", "backend": "sd.cpp", "endpoint": "/v1/images/generations" } },
 
+    { "id": "whisper-large-v3-turbo", "object": "model", "created": 1791656743, "owned_by": "hemera",
+      "hemera": { "kind": "transcription", "backend": "whisper.cpp", "endpoint": "/v1/audio/transcriptions" } },
+
     { "id": "pixal3d_int8_convrot", "object": "model", "created": 1791656743, "owned_by": "comfyui",
       "hemera": {
         "kind": "3d", "backend": "comfyui", "family": "pixal3d", "title": "Pixal3D",
@@ -46,7 +49,7 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
 
 | `hemera` field | Meaning |
 |---|---|
-| `kind` | `text`, `image`, `video` or `3d` — what the model produces. Group models by this. |
+| `kind` | `text`, `image`, `video`, `3d` or `transcription` — what the model does. Group models by this. |
 | `endpoint` | Where to send a generation request for this model. |
 | `backend` | `llama.cpp`, `sd.cpp`, `proxy`, `comfyui`, … Informational. |
 | `family`, `title`, `description` | ComfyUI models only. `title` and `description` are fit to show to a user. |
@@ -79,6 +82,7 @@ For clients built on the Ollama API. Entries have Ollama's usual fields, and eve
 | `image` | generates images |
 | `video` | generates video |
 | `3d` | generates 3D meshes |
+| `transcription` | turns speech into text |
 
 A chat client should offer only models whose capabilities include `completion`. The `hemera`
 object is identical to the one in `/v1/models` and is present for ComfyUI models. Generation
@@ -220,7 +224,45 @@ The job object:
 Displaying a `.glb` in a browser needs nothing from hemera: `<model-viewer src="...">`, three.js
 `GLTFLoader` and Babylon.js all load it directly from the `content` URL.
 
-## 5. A client loop for video and 3D
+## 5. Speech recognition — `/v1/audio/transcriptions`
+
+```
+POST /v1/audio/transcriptions   multipart: file, model, [language], [prompt], [response_format], [temperature]
+POST /v1/audio/translations     multipart: file, model, [prompt], [response_format], [temperature]
+```
+
+OpenAI's Audio API. Any OpenAI SDK works by pointing its base URL at hemera.
+
+| Field | Notes |
+|---|---|
+| `file` | The recording. WAV, MP3, FLAC, and whatever ffmpeg reads: WebM/Ogg from `MediaRecorder`, M4A from phones. |
+| `model` | A model whose `hemera.kind` is `transcription`. |
+| `language` | ISO-639-1 (`id`, `en`, `ja`, …). Leave it out to have it detected; give it when you know it, which is faster and avoids a wrong guess on short clips. |
+| `prompt` | Text the speech is likely to follow or contain: the conversation so far, names, jargon. It steers spelling and vocabulary, not content. Whisper reads only its last ~220 tokens (roughly 150 words), so put the most relevant text last. |
+| `response_format` | `json` (default, `{"text": "..."}`), `text`, `srt`, `vtt` or `verbose_json` (language, duration, segments with timings and words). |
+| `temperature` | `0` for the most literal result. |
+
+`stream`, `timestamp_granularities[]` and `include[]` are accepted and ignored: the answer always
+comes whole, and `verbose_json` always carries both segment and word timings.
+
+`/v1/audio/translations` answers in English whatever was spoken. Whisper's **turbo** models cannot
+translate (they were trained only to transcribe) and are refused with a 400 that says so; use a
+full model such as `whisper-large-v3` for this.
+
+```js
+const form = new FormData();
+form.append("model", "whisper-large-v3-turbo");
+form.append("language", "id");
+form.append("prompt", lastFewMessages);        // context for names and jargon
+form.append("file", recordedBlob, "speech.webm");
+const { text } = await (await fetch(base + "/v1/audio/transcriptions", { method: "POST", body: form })).json();
+```
+
+For dictation, send one utterance per request (cut at the pause), not a running recording: a
+few seconds of speech comes back in about a third of a second once the model is loaded. Long
+recordings work too; a 21-minute file takes about half a minute.
+
+## 6. A client loop for video and 3D
 
 ```js
 async function generate(base, endpoint, form, onProgress) {
@@ -240,7 +282,7 @@ async function generate(base, endpoint, form, onProgress) {
 `endpoint` is the model's `hemera.endpoint`; `form` is a `FormData` with `model` plus the fields
 built from `hemera.parameters`.
 
-## 6. Things worth knowing
+## 7. Things worth knowing
 
 - **One at a time.** The machine has one GPU. Jobs for the same model queue inside hemera, jobs
   for different ComfyUI models queue inside ComfyUI; either way a job reports `queued` until it
@@ -249,6 +291,10 @@ built from `hemera.parameters`.
   the largest), then stays loaded for five minutes of idleness.
 - **Typical times** on the reference machine (Ryzen AI Max+ 395): image 1–2 min; Hunyuan3D 2–3 min;
   TRELLIS.2 / Pixal3D with vertex colours 5–10 min, with `pbr` 20–40 min; video 2–10 min depending
-  on size and length.
+  on size and length; speech about 35× faster than it was spoken with `whisper-large-v3-turbo`
+  (0.3 s for a short utterance), about 13× with `whisper-large-v3` (0.9 s), which makes
+  fewer mistakes (7% of words against 8% in Indonesian).
+- **Speech requests queue too.** A speech model works on one recording at a time; requests made
+  together are answered one after another (three short utterances: 0.3, 0.6 and 0.9 s).
 - **Text models** are a separate matter: `/v1/chat/completions` (OpenAI), `/v1/messages`
   (Anthropic) and `/api/chat` (Ollama) all work, with streaming.

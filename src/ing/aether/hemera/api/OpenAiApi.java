@@ -39,7 +39,7 @@ public final class OpenAiApi
 
   /**
    * Every model hemera can serve. Beyond OpenAI's four fields each entry carries a "hemera"
-   * object saying what the model is for — text, image, video or 3d — which is all a client needs
+   * object saying what the model is for — text, image, transcription, video or 3d — which is all a client needs
    * to pick the endpoint; for the models ComfyUI offers it also lists their request parameters.
    */
   private List<Object> models()
@@ -49,10 +49,12 @@ public final class OpenAiApi
     for (Map<String, Object> m : cfg.models())
     {
       boolean image = ing.aether.hemera.engine.Engines.isImageModel(cfg, m);
+      boolean speech = ing.aether.hemera.engine.Engines.isTranscriptionModel(cfg, m);
       data.add(Json.map("id", Json.str(m, "name", "?"), "object", "model",
           "created", created, "owned_by", "hemera",
-          "hemera", Json.map("kind", image ? "image" : "text", "backend", Json.str(m, "engine", "llama.cpp"),
-              "endpoint", image ? "/v1/images/generations" : "/v1/chat/completions")));
+          "hemera", Json.map("kind", image ? "image" : speech ? "transcription" : "text",
+              "backend", Json.str(m, "engine", "llama.cpp"),
+              "endpoint", image ? "/v1/images/generations" : speech ? "/v1/audio/transcriptions" : "/v1/chat/completions")));
     }
     for (Map<String, Object> p : cfg.proxies())
       data.add(Json.map("id", Json.str(p, "name", "?"), "object", "model",

@@ -74,8 +74,9 @@ public final class Engines
   /**
    * How hemera builds an engine's command line: "llama" (llama-server and forks: --host/--port,
    * -m, --mmproj), "sd" (stable-diffusion.cpp's sd-server: --listen-ip/--listen-port,
-   * --diffusion-model, --vae, --llm, ...) or "custom" (only the configured args). An explicit
-   * "argStyle" on the engine wins; otherwise it is recognised from the server binary's name.
+   * --diffusion-model, --vae, --llm, ...), "whisper" (whisper.cpp's whisper-server: --host/--port,
+   * -m) or "custom" (only the configured args). An explicit "argStyle" on the engine wins;
+   * otherwise it is recognised from the server binary's name.
    */
   public static String argStyle(Config cfg, String engine)
   {
@@ -88,6 +89,8 @@ public final class Engines
         : Json.str(e, "serverBin", "llama-server");
     if (bin.contains("sd-server"))
       return "sd";
+    if (bin.contains("whisper-server"))
+      return "whisper";
     if (bin.contains("llama-server"))
       return "llama";
     return "custom";
@@ -99,12 +102,29 @@ public final class Engines
     return "sd".equals(argStyle(cfg, Json.str(model, "engine", "llama.cpp")));
   }
 
-  /** Refuse to route a chat/completion/embedding request to an image model with a useful message. */
+  /** A speech-recognition model is one served by a whisper.cpp-style engine. */
+  public static boolean isTranscriptionModel(Config cfg, Map<String, Object> model)
+  {
+    return "whisper".equals(argStyle(cfg, Json.str(model, "engine", "llama.cpp")));
+  }
+
+  /** Refuse to route a chat/completion/embedding request to an image or speech model with a useful message. */
   public static void requireTextModel(Config cfg, Map<String, Object> model)
   {
     if (isImageModel(cfg, model))
       throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is an image model — "
           + "use POST /v1/images/generations or /v1/images/edits");
+    if (isTranscriptionModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is a speech-recognition model — "
+          + "use POST /v1/audio/transcriptions or /v1/audio/translations");
+  }
+
+  /** The audio endpoints only make sense against a whisper.cpp-style engine. */
+  public static void requireTranscriptionModel(Config cfg, Map<String, Object> model)
+  {
+    if (!isTranscriptionModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is not a speech-recognition model "
+          + "(its engine is not whisper.cpp)");
   }
 
   /** The reverse: the images endpoints only make sense against an sd.cpp-style engine. */

@@ -99,6 +99,34 @@ public final class Upstream
     return Json.parseObj(resp.body());
   }
 
+  /** A reply passed on as it came: its bytes and what they are. */
+  public record Raw(String contentType, byte[] body)
+  {
+  }
+
+  /**
+   * POST a pre-encoded body and keep the reply as it is, for answers that need not be JSON
+   * (SRT, VTT and plain-text transcripts). Throws HttpError on non-2xx.
+   */
+  public static Raw postBytesRaw(String url, byte[] body, String contentType)
+      throws IOException, InterruptedException
+  {
+    if (Log.traceOn())
+      Log.trace("upstream", "POST " + url + " (" + body.length + " bytes, " + contentType + ")");
+    HttpRequest req = HttpRequest.newBuilder()
+        .uri(URI.create(url))
+        .header("Content-Type", contentType)
+        .timeout(Duration.ofHours(1))
+        .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+        .build();
+    HttpResponse<byte[]> resp = HC.send(req, HttpResponse.BodyHandlers.ofByteArray());
+    if (resp.statusCode() / 100 != 2)
+      throw new HttpError(resp.statusCode() >= 500 ? 502 : resp.statusCode(),
+          "upstream " + url + " returned " + resp.statusCode() + ": "
+              + abbrev(new String(resp.body(), StandardCharsets.UTF_8)));
+    return new Raw(resp.headers().firstValue("Content-Type").orElse("application/octet-stream"), resp.body());
+  }
+
   /**
    * Read a server-sent-event stream and invoke consumer(eventName, data) per data line.
    * eventName is the most recent "event:" line (null for plain OpenAI-style streams).

@@ -205,6 +205,31 @@ public final class InstanceManager
         cmd.add(file);
       }
     }
+    else if ("whisper".equals(style))
+    {
+      cmd.add("--host");
+      cmd.add("127.0.0.1");
+      cmd.add("--port");
+      cmd.add(String.valueOf(port));
+      if (!file.isEmpty())
+      {
+        cmd.add("-m");
+        cmd.add(file);
+      }
+      List<String> given = new ArrayList<>(Json.strList(engineCfg, "defaultArgs"));
+      given.addAll(Json.strList(model, "args"));
+      // whisper-server assumes English unless told otherwise; OpenAI detects the language when
+      // a request names none, so start it that way and let each request narrow it down.
+      if (!given.contains("-l") && !given.contains("--language"))
+      {
+        cmd.add("-l");
+        cmd.add("auto");
+      }
+      // On its own it reads only WAV, MP3 and FLAC. Browsers record WebM/Ogg and phones M4A, so
+      // let it hand everything to ffmpeg when there is one.
+      if (!given.contains("--convert") && onPath("ffmpeg"))
+        cmd.add("--convert");
+    }
     if (!"custom".equals(style))
     {
       for (Map.Entry<String, Object> e : extraFiles.entrySet())
@@ -465,6 +490,14 @@ public final class InstanceManager
     {
       Log.debug("instance", "could not adjust oom_score_adj for pid " + proc.pid() + ": " + e);
     }
+  }
+
+  private static boolean onPath(String program)
+  {
+    for (String dir : System.getenv().getOrDefault("PATH", "").split(":"))
+      if (!dir.isEmpty() && Files.isExecutable(Path.of(dir, program)))
+        return true;
+    return false;
   }
 
   private static String substitute(String arg, int port, String file, String mmproj)

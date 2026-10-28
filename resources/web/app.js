@@ -377,6 +377,11 @@ function isSdEngine(name) {
   const e = (CONFIG.engines || {})[name] || {};
   return e.argStyle ? e.argStyle === "sd" : /sd-server/.test(e.serverBin || e.binaryPath || "");
 }
+/** True for an engine that runs whisper.cpp's whisper-server (speech recognition). */
+function isWhisperEngine(name) {
+  const e = (CONFIG.engines || {})[name] || {};
+  return e.argStyle ? e.argStyle === "whisper" : /whisper-server/.test(e.serverBin || e.binaryPath || "");
+}
 function firstSdEngine() {
   return Object.keys(CONFIG.engines || {}).find(isSdEngine) || "sd.cpp";
 }
@@ -459,7 +464,7 @@ function modelForm(existing, scanFile) {
       <div class="full mf-managed"><label>Engine variant filter (substring, e.g. "rocm" or "vulkan"; empty = any)</label>
         <input type="text" id="mf-variant" value="${esc(m.engineVariant || "")}" list="mf-variants">
         <datalist id="mf-variants">${variants.map(v => `<option>${esc(v)}</option>`).join("")}</datalist></div>
-      <div class="full"><label>Model file (.gguf — first part for split models)</label>
+      <div class="full"><label>Model file (.gguf — first part for split models; whisper.cpp takes its ggml .bin)</label>
         <input type="text" id="mf-file" class="mono" value="${esc(file)}"></div>
       <div class="full mf-text"><label>Vision projector (mmproj)</label>
         ${mmproj ? `<div class="row" style="gap:8px">
@@ -506,9 +511,10 @@ function modelForm(existing, scanFile) {
     const sel = $("#mf-engine").value;
     const manual = !!(CONFIG.engines[sel] || {}).binaryPath;
     $$(".mf-managed").forEach(d => d.style.display = manual ? "none" : "");
-    // A diffusion pipeline has no mmproj, and only it can do prompt-driven transparency.
+    // A diffusion pipeline or a speech model has no mmproj, and only a diffusion pipeline can
+    // do prompt-driven transparency.
     const image = isSdEngine(sel);
-    $$(".mf-text").forEach(d => d.style.display = image ? "none" : "");
+    $$(".mf-text").forEach(d => d.style.display = image || isWhisperEngine(sel) ? "none" : "");
     $$(".mf-image").forEach(d => d.style.display = image ? "" : "none");
     // Version/variant options were only ever built for the model's original engine, so
     // switching engines has to rebuild them for whichever one is now selected.

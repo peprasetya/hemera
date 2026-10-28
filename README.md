@@ -171,16 +171,16 @@ editable under Settings; `libraryAutoDetect: false` turns the search off entirel
 | Dialect | Endpoints |
 |---|---|
 | Ollama | `/api/tags` `/api/ps` `/api/show` `/api/chat` `/api/generate` `/api/embed` `/api/delete` `/api/stop` `/api/version` |
-| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` |
+| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` `/v1/audio/transcriptions` `/v1/audio/translations` |
 | hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint; see [docs/media-api.md](docs/media-api.md)) |
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
 
-**What is each model for?** A server now holds chat models next to image, video and 3D ones, and
+**What is each model for?** A server now holds chat models next to image, video, 3D and speech ones, and
 neither OpenAI's nor Ollama's model list has a field for that, so hemera adds one to each, in
 that dialect's own style. `/v1/models` entries carry a `hemera` object — `kind` (`text`, `image`,
-`video`, `3d`), the `endpoint` to call, and for ComfyUI models their request `parameters`, enough
+`video`, `3d`, `transcription`), the `endpoint` to call, and for ComfyUI models their request `parameters`, enough
 to generate a form. `/api/tags` and `/api/show` carry Ollama's `capabilities` list, with `image`,
-`video` and `3d` added to its `completion` / `tools` / `vision`: a chat client offers the models
+`video`, `3d` and `transcription` added to its `completion` / `tools` / `vision`: a chat client offers the models
 that have `completion` and ignores the rest. Asking a model for the wrong thing is answered with
 the endpoint that would have worked. [docs/media-api.md](docs/media-api.md) spells all of it out.
 
@@ -394,6 +394,49 @@ there while it runs. The next job that needs it also starts it again by itself. 
 work on a ComfyUI hemera started from its `dir`; one only reached by `url` has to be restarted where
 it runs (`POST /hemera/api/comfyui/control` with `{"action": "start|restart|stop"}`).
 
+## Speech recognition (whisper.cpp)
+
+`/v1/audio/transcriptions` and `/v1/audio/translations` run on whisper.cpp's `whisper-server`,
+which already takes OpenAI's form fields and answers in OpenAI's formats (`json`, `text`, `srt`,
+`vtt`, `verbose_json`). hemera starts it on demand like any other engine, unloads it when idle,
+and counts it in the memory guard.
+
+whisper.cpp publishes GPU builds only for Windows, so on Linux it is built from source (cmake,
+`-DGGML_VULKAN=ON`) and configured as a manual binary:
+
+```json
+"engines": { "whisper.cpp": { "binaryPath": "/path/to/whisper.cpp/build/bin/whisper-server" } },
+"models": [ { "name": "whisper-large-v3-turbo", "engine": "whisper.cpp",
+              "file": "/path/to/ggml-large-v3-turbo-q8_0.bin" } ]
+```
+
+A binary named `whisper-server` is recognised by its name (`"argStyle": "whisper"` otherwise).
+hemera starts it with `-l auto`, so a request without `language` is detected rather than
+assumed English, and with `--convert` when ffmpeg is on the PATH, so WebM, Ogg and M4A work
+as well as WAV, MP3 and FLAC; either can be overridden in the model's `args`. Its `text` comes
+back as one clean line, as OpenAI's does, instead of whisper's line per segment.
+
+Whisper's turbo models only transcribe; `/v1/audio/translations` refuses them with a pointer to
+a full model. Set `"translates": true` on a model to override the guess, which goes by "turbo"
+in the file name.
+
+On the reference machine (Ryzen AI Max+ 395, Vulkan), 100 Indonesian FLEURS sentences
+(21 minutes), one request per sentence:
+
+| Model | Word errors | Speed | One utterance | Memory |
+|---|---|---|---|---|
+| large-v3, `-bs 5` | 7.0% | 13× realtime | 0.91 s | 3.9 GB |
+| large-v3 | 7.5% | 16× | 0.77 s | 3.3 GB |
+| large-v3-turbo q8_0, `-bs 5` | 8.1% | 37× | 0.33 s | 1.2 GB |
+| large-v3-turbo q8_0 | 8.7% | 44× | 0.26 s | 1.0 GB |
+| large-v3-turbo | 8.5% | 36× | 0.33 s | 1.7 GB |
+| medium | 13.7% | 24× | 0.49 s | 1.9 GB |
+| *whisperX large-v3 int8, CPU (for comparison)* | *7.0%* | *3×* | *4.1 s* | — |
+
+Beam search (`-bs 5` in the model's args; clients cannot ask for it through OpenAI's API) is
+worth its small cost. Turbo is the one for dictation and anything live; large-v3 for the last
+bit of accuracy and for translation. Medium is both slower and less accurate than turbo.
+
 ## Memory
 
 Before an engine starts, hemera estimates what it needs — its files, plus 2 GB of working memory
@@ -503,7 +546,7 @@ src/ing/aether/hemera/
   web/                 admin endpoints + embedded UI
 resources/web/         index.html, app.css, app.js
 resources/comfyui/     built-in recipes, one per model family
-docs/media-api.md      the image / video / 3D contract for client authors
+docs/media-api.md      the image / video / 3D / speech contract for client authors
 ```
 
 ## License

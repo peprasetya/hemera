@@ -3,6 +3,7 @@ package ing.aether.hemera;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import ing.aether.hemera.api.AudioApi;
 import ing.aether.hemera.api.ClaudeApi;
 import ing.aether.hemera.api.ImagesApi;
 import ing.aether.hemera.api.OllamaApi;
@@ -96,6 +97,7 @@ public final class Hemera
     new OllamaApi(cfg, im, registry, proxies, comfy, router);
     new OpenAiApi(cfg, im, proxies, comfy, router);
     new ImagesApi(cfg, im, proxies, comfy, router);
+    new AudioApi(cfg, im, router);
     new ClaudeApi(cfg, im, proxies, router);
     new AdminApi(cfg, im, registry, comfy, router);
     new StaticFiles(router);
