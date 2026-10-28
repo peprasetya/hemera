@@ -75,7 +75,8 @@ public final class Engines
    * How hemera builds an engine's command line: "llama" (llama-server and forks: --host/--port,
    * -m, --mmproj), "sd" (stable-diffusion.cpp's sd-server: --listen-ip/--listen-port,
    * --diffusion-model, --vae, --llm, ...), "whisper" (whisper.cpp's whisper-server: --host/--port,
-   * -m) or "custom" (only the configured args). An explicit "argStyle" on the engine wins;
+   * -m), "audiocpp" (audio.cpp's audiocpp_server: a generated --config naming the model) or "custom"
+   * (only the configured args). An explicit "argStyle" on the engine wins;
    * otherwise it is recognised from the server binary's name.
    */
   public static String argStyle(Config cfg, String engine)
@@ -91,6 +92,8 @@ public final class Engines
       return "sd";
     if (bin.contains("whisper-server"))
       return "whisper";
+    if (bin.contains("audiocpp_server"))
+      return "audiocpp";
     if (bin.contains("llama-server"))
       return "llama";
     return "custom";
@@ -108,6 +111,13 @@ public final class Engines
     return "whisper".equals(argStyle(cfg, Json.str(model, "engine", "llama.cpp")));
   }
 
+  /** A speech-synthesis model is a text-to-speech entry on an audio.cpp-style engine. */
+  public static boolean isSpeechModel(Config cfg, Map<String, Object> model)
+  {
+    return "audiocpp".equals(argStyle(cfg, Json.str(model, "engine", "llama.cpp")))
+        && "tts".equals(Json.str(model, "task", "tts"));
+  }
+
   /** Refuse to route a chat/completion/embedding request to an image or speech model with a useful message. */
   public static void requireTextModel(Config cfg, Map<String, Object> model)
   {
@@ -117,6 +127,17 @@ public final class Engines
     if (isTranscriptionModel(cfg, model))
       throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is a speech-recognition model — "
           + "use POST /v1/audio/transcriptions or /v1/audio/translations");
+    if (isSpeechModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is a text-to-speech model — "
+          + "use POST /v1/audio/speech");
+  }
+
+  /** The speech endpoint only makes sense against a text-to-speech entry on audio.cpp. */
+  public static void requireSpeechModel(Config cfg, Map<String, Object> model)
+  {
+    if (!isSpeechModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' is not a text-to-speech model "
+          + "(its engine is not audio.cpp, or its task is not tts)");
   }
 
   /** The audio endpoints only make sense against a whisper.cpp-style engine. */

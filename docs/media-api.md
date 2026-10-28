@@ -1,4 +1,4 @@
-# hemera media API — images, video, 3D and speech
+# hemera media API — images, video, 3D, speech recognition and text to speech
 
 Written for whoever builds a client on top of hemera (aether.ing first). It is self-contained:
 everything a client needs to discover what a hemera server can generate and to drive it.
@@ -32,6 +32,9 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
     { "id": "whisper-large-v3-turbo", "object": "model", "created": 1791656743, "owned_by": "hemera",
       "hemera": { "kind": "transcription", "backend": "whisper.cpp", "endpoint": "/v1/audio/transcriptions" } },
 
+    { "id": "voxcpm2", "object": "model", "created": 1791656743, "owned_by": "hemera",
+      "hemera": { "kind": "speech", "backend": "audio.cpp", "endpoint": "/v1/audio/speech" } },
+
     { "id": "pixal3d_int8_convrot", "object": "model", "created": 1791656743, "owned_by": "comfyui",
       "hemera": {
         "kind": "3d", "backend": "comfyui", "family": "pixal3d", "title": "Pixal3D",
@@ -49,7 +52,7 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
 
 | `hemera` field | Meaning |
 |---|---|
-| `kind` | `text`, `image`, `video`, `3d` or `transcription` — what the model does. Group models by this. |
+| `kind` | `text`, `image`, `video`, `3d`, `transcription` (speech to text) or `speech` (text to speech) — what the model does. Group models by this. |
 | `endpoint` | Where to send a generation request for this model. |
 | `backend` | `llama.cpp`, `sd.cpp`, `proxy`, `comfyui`, … Informational. |
 | `family`, `title`, `description` | ComfyUI models only. `title` and `description` are fit to show to a user. |
@@ -83,6 +86,7 @@ For clients built on the Ollama API. Entries have Ollama's usual fields, and eve
 | `video` | generates video |
 | `3d` | generates 3D meshes |
 | `transcription` | turns speech into text |
+| `speech` | turns text into speech |
 
 A chat client should offer only models whose capabilities include `completion`. The `hemera`
 object is identical to the one in `/v1/models` and is present for ComfyUI models. Generation
@@ -319,7 +323,59 @@ How it behaves:
   0.5) makes it less eager to call something speech, `silence_duration_ms` (default 500) how long
   a pause ends an utterance; dictation is usually happier with 800–1000.
 
-## 6. A client loop for video and 3D
+## 6. Text to speech — `/v1/audio/speech`
+
+```
+POST /v1/audio/speech   JSON: model, input, [voice], [instructions], [response_format], [speed], [stream_format]
+```
+
+OpenAI's speech API; any OpenAI SDK works against hemera.
+
+| Field | Notes |
+|---|---|
+| `model` | A model whose `hemera.kind` is `speech`. |
+| `input` | The text. Indonesian, English and mixtures of the two are fine with `voxcpm2`. |
+| `voice` | A name from hemera's voice library (below) to speak in that person's voice, or a voice the model has built in. OpenAI's names (`alloy`, `nova`, …) mean "the model's default voice". |
+| `instructions` | A description of the voice to make up when no `voice` is given: "a young woman, warm and clear", "an elderly man, slow and calm". |
+| `response_format` | `mp3` (default), `opus` (Ogg), `aac`, `flac`, `wav`, or `pcm` (raw 16-bit mono at 24 kHz). |
+| `speed` | A multiplier, for the models that support it. |
+| `stream_format` | `sse` to receive audio while it is being made, as `speech.audio.delta` events (base64 PCM, 16-bit mono 24 kHz) and a final `speech.audio.done`; `audio` for the same PCM as a plain chunked body. |
+
+```js
+// play as it arrives
+const res = await fetch(base + "/v1/audio/speech", { method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ model: "voxcpm2", input: text, voice: "paulus", stream_format: "sse" }) });
+for await (const ev of readSse(res.body)) {
+  if (ev.type === "speech.audio.delta") player.enqueue(base64ToInt16(ev.audio), 24000);
+}
+```
+
+With `voxcpm2`, streamed audio starts 0.15 s after the request and a sentence is made about 2.5×
+faster than it is spoken. Models that cannot stream (the `hemera` entry does not say; try it)
+answer in the same shape, all at once when they are done.
+
+### Voices
+
+The voice library is shared by all speech models: a recording of someone and what they say in it.
+
+```
+GET    /v1/audio/voices                 the library: [{id, transcript, owner, consent, created_at, duration_sec}]
+POST   /v1/audio/voices                 multipart: name, file, consent, [transcript], [owner], [language]
+GET    /v1/audio/voices/{name}          one voice's details
+GET    /v1/audio/voices/{name}/audio    its recording (WAV)
+DELETE /v1/audio/voices/{name}
+```
+
+- **The recording**: 5–20 s of one person speaking clearly, in any format; longer is cut to 30 s.
+  Natural, conversational speech gives a natural voice; a slow reading gives a slow one.
+- **`transcript`** is what is said in the recording. Leave it out and hemera writes it with its
+  speech recogniser; giving it (or correcting it) makes the clone closer.
+- **`consent` is required**: whose voice it is and that they agreed, e.g. `"my own voice"` or
+  `"recorded with Maria's permission for the parish announcements"`. It is stored with the voice
+  and shown in the list.
+- `name` is lowercase letters, digits, `-` and `_`, and cannot be one of OpenAI's voice names.
+
+## 7. A client loop for video and 3D
 
 ```js
 async function generate(base, endpoint, form, onProgress) {
@@ -339,7 +395,7 @@ async function generate(base, endpoint, form, onProgress) {
 `endpoint` is the model's `hemera.endpoint`; `form` is a `FormData` with `model` plus the fields
 built from `hemera.parameters`.
 
-## 7. Things worth knowing
+## 8. Things worth knowing
 
 - **One at a time.** The machine has one GPU. Jobs for the same model queue inside hemera, jobs
   for different ComfyUI models queue inside ComfyUI; either way a job reports `queued` until it

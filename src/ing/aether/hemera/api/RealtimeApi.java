@@ -106,7 +106,7 @@ public final class RealtimeApi
     private Runnable unpin;
 
     // audio state
-    private final Resampler resampler = new Resampler();
+    private final Pcm.Resampler resampler = new Pcm.Resampler(24000, RATE);
     private short[] pending = new short[0];          // 16 kHz samples not yet a whole VAD frame
     private final ShortBuffer prefix = new ShortBuffer();
     private final ShortBuffer utterance = new ShortBuffer();
@@ -330,16 +330,11 @@ public final class RealtimeApi
     private short[] decode(byte[] raw)
     {
       if ("pcm16".equals(format))
-      {
-        short[] s = new short[raw.length / 2];
-        for (int i = 0; i < s.length; i++)
-          s[i] = (short) (raw[2 * i] & 0xff | raw[2 * i + 1] << 8);
-        return s;
-      }
+        return Pcm.fromLittleEndian(raw);
       boolean ulaw = "g711_ulaw".equals(format);
       short[] s = new short[raw.length];
       for (int i = 0; i < raw.length; i++)
-        s[i] = ulaw ? G711.ulaw(raw[i]) : G711.alaw(raw[i]);
+        s[i] = ulaw ? Pcm.ulaw(raw[i]) : Pcm.alaw(raw[i]);
       return s;
     }
 
@@ -460,7 +455,7 @@ public final class RealtimeApi
     {
       try
       {
-        List<String> words = words(audio.transcribe(model, Wav.of(samples, RATE), language, contextPrompt()));
+        List<String> words = words(audio.transcribe(model, Pcm.wav(samples, RATE), language, contextPrompt()));
         List<String> before = lastHypothesis.put(item, words);
         if (before == null)
           return;
@@ -480,7 +475,7 @@ public final class RealtimeApi
       try
       {
         String text = samples.length < MIN_SPEECH ? ""
-            : audio.transcribe(model, Wav.of(samples, RATE), language, contextPrompt());
+            : audio.transcribe(model, Pcm.wav(samples, RATE), language, contextPrompt());
         sendDelta(item, words(text));
         lastHypothesis.remove(item);
         emitted.remove(item);
@@ -596,100 +591,6 @@ public final class RealtimeApi
     short[] toArray()
     {
       return Arrays.copyOf(a, n);
-    }
-  }
-
-  /**
-   * Any rate to 16 kHz, chunk by chunk without seams. Going down, each output sample averages
-   * the input it stands for, which keeps most of the aliasing out; going up, it interpolates.
-   */
-  private static final class Resampler
-  {
-    private int rate = 24000;
-    private double pos;           // position of the next output sample, in input samples
-    private short last;
-
-    void setRate(int r)
-    {
-      rate = r;
-      pos = 0;
-    }
-
-    short[] process(short[] in)
-    {
-      if (rate == RATE)
-        return in;
-      double step = (double) rate / RATE;
-      List<Short> out = new ArrayList<>(in.length * RATE / rate + 2);
-      while (pos < in.length)
-      {
-        double v;
-        if (step > 1)
-        {
-          int from = (int) Math.floor(pos);
-          int to = Math.min(in.length, (int) Math.floor(pos + step));
-          double sum = 0;
-          int count = 0;
-          for (int i = Math.max(from, 0); i < to; i++, count++)
-            sum += in[i];
-          v = count == 0 ? (from < 0 ? last : in[Math.max(0, from)]) : sum / count;
-        }
-        else
-        {
-          int i = (int) Math.floor(pos);
-          double frac = pos - i;
-          double a = i < 0 ? last : in[i];
-          double b = i + 1 < in.length ? in[i + 1] : a;
-          v = a + (b - a) * frac;
-        }
-        out.add((short) Math.max(-32768, Math.min(32767, Math.round(v))));
-        pos += step;
-      }
-      pos -= in.length;
-      if (in.length > 0)
-        last = in[in.length - 1];
-      short[] r = new short[out.size()];
-      for (int i = 0; i < r.length; i++)
-        r[i] = out.get(i);
-      return r;
-    }
-  }
-
-  /** ITU G.711, as telephone lines carry it. */
-  private static final class G711
-  {
-    static short ulaw(byte b)
-    {
-      int u = ~b & 0xff;
-      int t = ((u & 0x0f) << 3) + 0x84;
-      t <<= (u & 0x70) >> 4;
-      return (short) ((u & 0x80) != 0 ? 0x84 - t : t - 0x84);
-    }
-
-    static short alaw(byte b)
-    {
-      int a = (b ^ 0x55) & 0xff;
-      int t = (a & 0x0f) << 4;
-      int seg = (a & 0x70) >> 4;
-      t = seg == 0 ? t + 8 : seg == 1 ? t + 0x108 : (t + 0x108) << (seg - 1);
-      return (short) ((a & 0x80) != 0 ? t : -t);
-    }
-  }
-
-  /** A mono 16-bit WAV file around raw samples. */
-  static final class Wav
-  {
-    static byte[] of(short[] s, int rate)
-    {
-      int data = s.length * 2;
-      java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(44 + data).order(java.nio.ByteOrder.LITTLE_ENDIAN);
-      b.put("RIFF".getBytes(StandardCharsets.US_ASCII)).putInt(36 + data).put("WAVE".getBytes(StandardCharsets.US_ASCII));
-      b.put("fmt ".getBytes(StandardCharsets.US_ASCII)).putInt(16).putShort((short) 1).putShort((short) 1)
-          .putInt(rate).putInt(rate * 2).putShort((short) 2).putShort((short) 16);
-      b.put("data".getBytes(StandardCharsets.US_ASCII)).putInt(data);
-      for (short v : s)
-        b.putShort(v);
-      return b.array();
     }
   }
 }

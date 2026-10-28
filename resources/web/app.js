@@ -382,6 +382,11 @@ function isWhisperEngine(name) {
   const e = (CONFIG.engines || {})[name] || {};
   return e.argStyle ? e.argStyle === "whisper" : /whisper-server/.test(e.serverBin || e.binaryPath || "");
 }
+/** True for an engine that runs audio.cpp's audiocpp_server (text to speech, voice cloning). */
+function isAudiocppEngine(name) {
+  const e = (CONFIG.engines || {})[name] || {};
+  return e.argStyle ? e.argStyle === "audiocpp" : /audiocpp_server/.test(e.serverBin || e.binaryPath || "");
+}
 function firstSdEngine() {
   return Object.keys(CONFIG.engines || {}).find(isSdEngine) || "sd.cpp";
 }
@@ -483,6 +488,14 @@ function modelForm(existing, scanFile) {
            <p class="small muted">No projector found next to this model — it will run text-only.
            Projectors are paired from the model's own directory, so they are never mixed between models.</p>`}
       </div>
+      <div class="mf-speech"><label>audio.cpp family (e.g. voxcpm2, omnivoice, kokoro)</label>
+        <input type="text" id="mf-family" class="mono" value="${esc(m.family || "")}"></div>
+      <div class="mf-speech"><label>Mode</label>
+        <select id="mf-mode">${["offline", "streaming"].map(v => `<option ${v === (m.mode || "offline") ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+      <div class="full mf-speech"><label>Default voice (a voice-library name, or one the model has built in)</label>
+        <input type="text" id="mf-voice" class="mono" value="${esc(m.voice || "")}">
+        <p class="small muted">Streaming mode lets <span class="mono">/v1/audio/speech</span> send audio while it is
+        still being made; it is only for families that support it (VoxCPM2 does, OmniVoice does not).</p></div>
       <div class="full"><label>Extra files (one per line: flag=path, e.g. vae=/path/vae.safetensors)</label>
         <textarea id="mf-extra" class="mono">${esc(extraLines)}</textarea>
         ${alternatives.length ? `<p class="small muted">Also found beside this model — swap a path above to use one:
@@ -514,7 +527,9 @@ function modelForm(existing, scanFile) {
     // A diffusion pipeline or a speech model has no mmproj, and only a diffusion pipeline can
     // do prompt-driven transparency.
     const image = isSdEngine(sel);
-    $$(".mf-text").forEach(d => d.style.display = image || isWhisperEngine(sel) ? "none" : "");
+    const speech = isAudiocppEngine(sel);
+    $$(".mf-text").forEach(d => d.style.display = image || speech || isWhisperEngine(sel) ? "none" : "");
+    $$(".mf-speech").forEach(d => d.style.display = speech ? "" : "none");
     $$(".mf-image").forEach(d => d.style.display = image ? "" : "none");
     // Version/variant options were only ever built for the model's original engine, so
     // switching engines has to rebuild them for whichever one is now selected.
@@ -534,7 +549,9 @@ function modelForm(existing, scanFile) {
     try {
       const parseKv = txt => Object.fromEntries(txt.split("\n").map(l => l.trim()).filter(l => l && l.includes("="))
         .map(l => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]));
-      const body = {
+      // Start from the saved model, so settings this form does not show (memoryMB, translates,
+      // ...) survive an edit; then the form's own fields win.
+      const body = Object.assign({}, existing || {}, {
         name: $("#mf-name").value.trim(),
         engine: $("#mf-engine").value,
         engineVersion: $("#mf-version").value,
@@ -545,9 +562,16 @@ function modelForm(existing, scanFile) {
         args: $("#mf-args").value.trim().split(/\s+/).filter(Boolean),
         env: parseKv($("#mf-env").value),
         keepAliveSeconds: parseInt($("#mf-keepalive").value, 10)
-      };
+      });
       const transparent = $("#mf-transparent").value.trim();
       if (transparent && isSdEngine(body.engine)) body.transparentPrompt = transparent;
+      else delete body.transparentPrompt;
+      if (isAudiocppEngine(body.engine)) {
+        body.family = $("#mf-family").value.trim();
+        body.mode = $("#mf-mode").value;
+        body.voice = $("#mf-voice").value.trim();
+        if (!body.voice) delete body.voice;
+      }
       if (!body.mmproj) delete body.mmproj;
       if (!Object.keys(body.extraFiles).length) delete body.extraFiles;
       if (!Object.keys(body.env).length) delete body.env;

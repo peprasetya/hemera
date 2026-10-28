@@ -136,13 +136,15 @@ public final class OllamaApi
             "quantization_level", Json.str(meta, "hemera.quant", "unknown")));
   }
 
-  /** Ollama's capability words, plus "image" for the models sd.cpp serves and "transcription" for whisper.cpp's. */
+  /** Ollama's capability words, plus "image" for the models sd.cpp serves and "transcription" for whisper.cpp's, "speech" for audio.cpp's text to speech. */
   private List<Object> capabilities(Map<String, Object> m, Map<String, Object> meta)
   {
     if (ing.aether.hemera.engine.Engines.isImageModel(cfg, m))
       return new ArrayList<>(List.of("image"));
     if (ing.aether.hemera.engine.Engines.isTranscriptionModel(cfg, m))
       return new ArrayList<>(List.of("transcription"));
+    if (ing.aether.hemera.engine.Engines.isSpeechModel(cfg, m))
+      return new ArrayList<>(List.of("speech"));
     List<Object> caps = new ArrayList<>(List.of("completion", "tools"));
     if (!Json.str(m, "mmproj", "").isEmpty() || Json.bool(meta, "hemera.vision", false))
       caps.add("vision");

@@ -230,7 +230,33 @@ public final class InstanceManager
       if (!given.contains("--convert") && onPath("ffmpeg"))
         cmd.add("--convert");
     }
-    if (!"custom".equals(style))
+    else if ("audiocpp".equals(style))
+    {
+      // audiocpp_server learns its models from a config file, so each hemera model gets one of
+      // its own: a single entry under the hemera name, which is what requests then ask for.
+      Map<String, Object> entry = Json.map("id", name,
+          "family", Json.str(model, "family", ""),
+          "path", file,
+          "task", Json.str(model, "task", "tts"),
+          "mode", Json.str(model, "mode", "offline"));
+      if (Json.str(model, "family", "").isEmpty())
+        throw new HttpError(400, "model '" + name + "' needs a \"family\" (audio.cpp's model family, e.g. voxcpm2)");
+      for (String k : List.of("load_options", "session_options", "default_request_options"))
+        if (model.get(k) instanceof Map<?, ?> m && !m.isEmpty())
+          entry.put(k, m);
+      Path conf = cfg.home.resolve("run").resolve(name.replaceAll("[^A-Za-z0-9._-]", "_") + ".audiocpp.json");
+      Files.createDirectories(conf.getParent());
+      Files.writeString(conf, Json.writePretty(Json.map("host", "127.0.0.1", "port", port,
+          "lazy_load", false, "models", List.of(entry))));
+      cmd.add("--config");
+      cmd.add(conf.toString());
+      cmd.add("--host");
+      cmd.add("127.0.0.1");
+      cmd.add("--port");
+      cmd.add(String.valueOf(port));
+      cmd.add("--no-ui");
+    }
+    if (!"custom".equals(style) && !"audiocpp".equals(style))
     {
       for (Map.Entry<String, Object> e : extraFiles.entrySet())
       {

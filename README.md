@@ -171,16 +171,16 @@ editable under Settings; `libraryAutoDetect: false` turns the search off entirel
 | Dialect | Endpoints |
 |---|---|
 | Ollama | `/api/tags` `/api/ps` `/api/show` `/api/chat` `/api/generate` `/api/embed` `/api/delete` `/api/stop` `/api/version` |
-| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/realtime` (transcription) |
-| hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint; see [docs/media-api.md](docs/media-api.md)) |
+| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/audio/speech` `/v1/realtime` (transcription) |
+| hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint), `/v1/audio/voices` (the voice library); see [docs/media-api.md](docs/media-api.md) |
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
 
 **What is each model for?** A server now holds chat models next to image, video, 3D and speech ones, and
 neither OpenAI's nor Ollama's model list has a field for that, so hemera adds one to each, in
 that dialect's own style. `/v1/models` entries carry a `hemera` object — `kind` (`text`, `image`,
-`video`, `3d`, `transcription`), the `endpoint` to call, and for ComfyUI models their request `parameters`, enough
+`video`, `3d`, `transcription`, `speech`), the `endpoint` to call, and for ComfyUI models their request `parameters`, enough
 to generate a form. `/api/tags` and `/api/show` carry Ollama's `capabilities` list, with `image`,
-`video`, `3d` and `transcription` added to its `completion` / `tools` / `vision`: a chat client offers the models
+`video`, `3d`, `transcription` and `speech` added to its `completion` / `tools` / `vision`: a chat client offers the models
 that have `completion` and ignores the rest. Asking a model for the wrong thing is answered with
 the endpoint that would have worked. [docs/media-api.md](docs/media-api.md) spells all of it out.
 
@@ -444,6 +444,52 @@ On the reference machine (Ryzen AI Max+ 395, Vulkan), 100 Indonesian FLEURS sent
 Beam search (`-bs 5` in the model's args; clients cannot ask for it through OpenAI's API) is
 worth its small cost. Turbo is the one for dictation and anything live; large-v3 for the last
 bit of accuracy and for translation. Medium is both slower and less accurate than turbo.
+
+## Text to speech (audio.cpp)
+
+`/v1/audio/speech` runs on [audio.cpp](https://github.com/0xShug0/audio.cpp)'s `audiocpp_server`,
+a ggml engine for dozens of speech model families (VoxCPM2, OmniVoice, Kokoro, Chatterbox,
+Qwen3-TTS, ...). It reads its models from a config file rather than flags, so hemera writes one
+per model under `run/` and starts the server on it. A model names its audio.cpp `family`, and
+`"mode": "streaming"` for families that can stream:
+
+```json
+"engines": { "audio.cpp": { "binaryPath": "/path/to/audiocpp_server", "defaultArgs": ["--backend", "vulkan"] } },
+"voicesDir": "/path/to/voices",
+"models": [
+  { "name": "voxcpm2", "engine": "audio.cpp", "family": "voxcpm2", "mode": "streaming",
+    "file": "/path/to/VoxCPM2-GGUF/voxcpm2-q8_0.gguf", "default_request_options": { "retry_badcase": false } },
+  { "name": "omnivoice", "engine": "audio.cpp", "family": "omnivoice",
+    "file": "/path/to/OmniVoice-GGUF/omnivoice-q8_0.gguf", "voice": "narrator" }
+]
+```
+
+`load_options`, `session_options` and `default_request_options` on a model go to audio.cpp as they
+are; `voice` is the model's default voice. audio.cpp defaults to CUDA, hence `--backend`.
+
+What hemera adds on top:
+
+- **A voice library** (`voicesDir`, default `voices/`): `/v1/audio/voices` takes a recording, its
+  transcript (written by the speech recogniser when left out) and a consent note, and any
+  model can then speak in that voice by name. Requests reach audio.cpp with the recording's path
+  and transcript, so no engine has to be told about new voices.
+- **OpenAI's formats.** audio.cpp writes WAV; ffmpeg turns it into MP3 (OpenAI's default), Opus,
+  AAC or FLAC. Raw and streamed PCM is brought to OpenAI's 24 kHz whatever the model speaks at
+  (VoxCPM2: 48 kHz).
+- **`instructions`** become a voice description the way each family takes one (VoxCPM2:
+  parentheses before the text; OmniVoice: its `instruct` option).
+- OpenAI's built-in voice names (`alloy`, ...) mean the model's default voice, since SDKs send one.
+
+Measured on the reference machine, Vulkan, Indonesian and English, each spoken result read back
+by whisper-large-v3:
+
+| Model | License | Word errors | Speed | First streamed audio |
+|---|---|---|---|---|
+| VoxCPM2 Q8_0 (2.8 GB) | Apache-2.0 | 5–8% | 2.5× realtime | 0.15 s |
+| OmniVoice Q8_0 (1.3 GB) | CC-BY-NC | 5–6% | 2.3–3.9× | — (answers whole) |
+
+Most of those "errors" are the recogniser writing numbers as digits; English and Indonesian came
+back word-perfect, including Indonesian–English mixtures. Latin ("Kyrie") is the weak spot.
 
 ## Memory
 

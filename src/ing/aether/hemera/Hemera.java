@@ -10,6 +10,7 @@ import ing.aether.hemera.api.OllamaApi;
 import ing.aether.hemera.api.OpenAiApi;
 import ing.aether.hemera.api.ProxyDispatcher;
 import ing.aether.hemera.api.RealtimeApi;
+import ing.aether.hemera.api.SpeechApi;
 import ing.aether.hemera.comfy.ComfyBridge;
 import ing.aether.hemera.config.Config;
 import ing.aether.hemera.engine.InstanceManager;
@@ -98,7 +99,9 @@ public final class Hemera
     new OllamaApi(cfg, im, registry, proxies, comfy, router);
     new OpenAiApi(cfg, im, proxies, comfy, router);
     new ImagesApi(cfg, im, proxies, comfy, router);
-    new RealtimeApi(new AudioApi(cfg, im, router), router);
+    AudioApi audio = new AudioApi(cfg, im, router);
+    new RealtimeApi(audio, router);
+    new SpeechApi(cfg, im, audio, router);
     new ClaudeApi(cfg, im, proxies, router);
     new AdminApi(cfg, im, registry, comfy, router);
     new StaticFiles(router);
