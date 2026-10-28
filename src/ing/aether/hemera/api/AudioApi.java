@@ -137,6 +137,61 @@ public final class AudioApi
     return text.replace("\r", "").replace("\n", "").strip();
   }
 
+  /** A configured speech model by the name a client used, or an HttpError that says what exists. */
+  Map<String, Object> transcriptionModel(String raw)
+  {
+    Map<String, Object> model = cfg.findModel(ProxyDispatcher.resolveName(cfg, raw));
+    if (model == null)
+      throw new HttpError(404, "model '" + raw + "' not found" + available());
+    Engines.requireTranscriptionModel(cfg, model);
+    return model;
+  }
+
+  /** The first configured speech model, for clients that leave the choice to the server. */
+  Map<String, Object> defaultTranscriptionModel()
+  {
+    for (Map<String, Object> m : cfg.models())
+      if (Engines.isTranscriptionModel(cfg, m))
+        return m;
+    throw new HttpError(404, "no speech-recognition model is configured");
+  }
+
+  /** Transcribe one WAV recording and return its text as one clean line. */
+  String transcribe(Map<String, Object> model, byte[] wav, String language, String prompt) throws Exception
+  {
+    List<Multipart.Part> parts = new ArrayList<>();
+    if (language != null && !language.isBlank())
+      parts.add(Multipart.Part.field("language", language));
+    if (prompt != null && !prompt.isBlank())
+      parts.add(Multipart.Part.field("prompt", prompt));
+    parts.add(Multipart.Part.field("response_format", "json"));
+    parts.add(Multipart.Part.field("temperature", "0"));
+    parts.add(Multipart.Part.file("file", "speech.wav", "audio/wav", wav));
+    String boundary = Multipart.randomBoundary();
+    byte[] payload = Multipart.write(parts, boundary);
+    Instance inst = im.ensure(model);
+    inst.beginRequest();
+    try
+    {
+      Upstream.Raw reply = Upstream.postBytesRaw("http://127.0.0.1:" + inst.port + "/inference", payload,
+          "multipart/form-data; boundary=" + boundary);
+      return oneLine(Json.str(Json.parseObj(new String(reply.body(), java.nio.charset.StandardCharsets.UTF_8)),
+          "text", ""));
+    }
+    finally
+    {
+      inst.endRequest();
+    }
+  }
+
+  /** Keep a model loaded while a live session may need it at any moment; returns how to let go. */
+  Runnable pin(Map<String, Object> model) throws Exception
+  {
+    Instance inst = im.ensure(model);
+    inst.beginRequest();
+    return inst::endRequest;
+  }
+
   /** The speech models there are, for a "not found" that says what to ask for instead. */
   private String available()
   {

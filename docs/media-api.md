@@ -262,6 +262,63 @@ For dictation, send one utterance per request (cut at the pause), not a running 
 few seconds of speech comes back in about a third of a second once the model is loaded. Long
 recordings work too; a 21-minute file takes about half a minute.
 
+### Live — `/v1/realtime` (WebSocket)
+
+For captions, dictation and calls: stream audio in, get text back as it is spoken. This is the
+transcription side of OpenAI's Realtime API; there is no voice answering back.
+
+```js
+const ws = new WebSocket("ws://host:12434/v1/realtime?intent=transcription", ["realtime"]);
+ws.onopen = () => ws.send(JSON.stringify({ type: "transcription_session.update", session: {
+  input_audio_format: "pcm16",                    // 16-bit mono, 24 kHz unless the GA form says otherwise
+  input_audio_transcription: { model: "whisper-large-v3-turbo", language: "id", prompt: "" },
+  turn_detection: { type: "server_vad", silence_duration_ms: 500 }   // null = you commit
+} }));
+// then, every 100 ms or so:
+ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: base64Pcm16 }));
+ws.onmessage = e => {
+  const ev = JSON.parse(e.data);
+  if (ev.type === "conversation.item.input_audio_transcription.delta") showDraft(ev.item_id, ev.delta);
+  if (ev.type === "conversation.item.input_audio_transcription.completed") showFinal(ev.item_id, ev.transcript);
+};
+```
+
+The GA spelling works as well: `session.update` with `session.type: "transcription"` and
+`session.audio.input.{format, transcription, turn_detection}`, where `format` is
+`{type: "audio/pcm", rate}`, `{type: "audio/pcmu"}` or `{type: "audio/pcma"}`.
+
+| You send | |
+|---|---|
+| `input_audio_buffer.append` | Base64 audio: `pcm16` (any rate 8–48 kHz; OpenAI allows only 24 kHz), or telephone `g711_ulaw` / `g711_alaw` at 8 kHz. |
+| `input_audio_buffer.commit` | End the utterance now (push-to-talk). Needed when `turn_detection` is `null`. |
+| `input_audio_buffer.clear` | Throw away what has not been committed. |
+
+| You get | |
+|---|---|
+| `input_audio_buffer.speech_started` / `speech_stopped` | hemera heard someone start / pause (`audio_start_ms`, `audio_end_ms` from the session start). |
+| `input_audio_buffer.committed` | The utterance is complete and being transcribed. |
+| `conversation.item.input_audio_transcription.delta` | More words of the utterance, while it is still being spoken. |
+| `conversation.item.input_audio_transcription.completed` | The utterance's text. **This is the one to keep.** |
+| `error` | Something in the last event was wrong; the session carries on. |
+
+How it behaves:
+
+- **Show deltas as a draft, replace them with `completed`.** Whisper does not stream, so hemera
+  re-reads the utterance about once a second and sends words two readings agree on. The first
+  delta comes 2–3 s into an utterance; the final text has punctuation and corrections the
+  deltas lack ("gambing" became "Kambing").
+- **The final text comes 0.3–0.7 s after the speaker pauses**; three sessions speaking at the
+  very same moment wait up to 1.6 s. Utterances longer than 29 s are cut and continue as the
+  next item.
+- **Context carries over.** Each utterance is read with the session's `prompt` plus the last few
+  hundred characters already transcribed, so names and spelling stay consistent. Put a glossary
+  or the conversation so far in `prompt`, and update it with another `session.update` at any time.
+- **The model stays loaded while the socket is open** and is never unloaded to make room for
+  something else. Close the socket when you are done.
+- Pause detection is by loudness above the room's background noise. `threshold` (0–1, default
+  0.5) makes it less eager to call something speech, `silence_duration_ms` (default 500) how long
+  a pause ends an utterance; dictation is usually happier with 800–1000.
+
 ## 6. A client loop for video and 3D
 
 ```js

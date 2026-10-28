@@ -171,7 +171,7 @@ editable under Settings; `libraryAutoDetect: false` turns the search off entirel
 | Dialect | Endpoints |
 |---|---|
 | Ollama | `/api/tags` `/api/ps` `/api/show` `/api/chat` `/api/generate` `/api/embed` `/api/delete` `/api/stop` `/api/version` |
-| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` `/v1/audio/transcriptions` `/v1/audio/translations` |
+| OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/realtime` (transcription) |
 | hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint; see [docs/media-api.md](docs/media-api.md)) |
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
 
@@ -415,6 +415,14 @@ hemera starts it with `-l auto`, so a request without `language` is detected rat
 assumed English, and with `--convert` when ffmpeg is on the PATH, so WebM, Ogg and M4A work
 as well as WAV, MP3 and FLAC; either can be overridden in the model's `args`. Its `text` comes
 back as one clean line, as OpenAI's does, instead of whisper's line per segment.
+
+`/v1/realtime` (WebSocket) is the live version: OpenAI's Realtime transcription session,
+audio streamed in (16-bit PCM at any rate, or telephone G.711), utterances cut at the pauses,
+words sent while they are spoken and the whole text when the speaker stops — typically 0.3–0.7 s
+later. The JDK's HTTP server cannot upgrade a connection to a WebSocket by itself, so hemera
+answers the handshake on its raw connection; the jar's manifest opens `jdk.httpserver` for that,
+which `java -jar hemera.jar` honours. Details for clients are in
+[docs/media-api.md](docs/media-api.md).
 
 Whisper's turbo models only transcribe; `/v1/audio/translations` refuses them with a pointer to
 a full model. Set `"translates": true` on a model to override the guess, which goes by "turbo"
