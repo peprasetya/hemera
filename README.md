@@ -344,8 +344,9 @@ The full contract for client authors — discovery, every field, the job objects
 [docs/media-api.md](docs/media-api.md).
 
 **Recipes.** What turns a file into a model is a *recipe*: a small JSON document naming the files
-a family needs (by pattern, per ComfyUI folder), the request parameters and where each lands, and
-the workflow itself in ComfyUI's API format. Built-in recipes cover TRELLIS.2, Pixal3D,
+a family needs (by pattern, per ComfyUI folder), the request parameters and where each lands, the
+workflow itself in ComfyUI's API format, and optionally `memoryMB`, what one job needs at its peak
+(see memory below). Built-in recipes cover TRELLIS.2, Pixal3D,
 Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain, and turbo-merged checkpoints), Qwen-Image and
 Qwen-Image 2.1 Turbo; they are the files in [resources/comfyui/](resources/comfyui/), and the jar
 lists them itself, so adding one is adding a file. Recipes are managed in the Directories tab, under
@@ -399,9 +400,10 @@ still in memory.
 
 Other keys: `python` (interpreter, when ComfyUI's virtualenv is not `venv/` or `.venv/` in or
 beside its folder), `args` (extra arguments for `main.py`), `env`, `autoStart` (default `true`:
-start with hemera rather than at the first request), `memoryMB` (what a job is expected to need,
-default 24576; see memory below), `exclusiveGpu` (default `false`: when `true`, every other engine
-is unloaded before a ComfyUI job and an idle ComfyUI is stopped before another engine loads).
+start with hemera rather than at the first request), `memoryMB` (what a job is expected to need when
+its recipe does not say, default 24576; see memory below), `exclusiveGpu` (default `false`: when
+`true`, every other engine is unloaded before a ComfyUI job and an idle ComfyUI is stopped before
+another engine loads).
 
 If ComfyUI dies — typically the kernel killing it when memory runs out — the Directories tab says
 so, with the exit code and ComfyUI's last output, and offers **Start**; **Restart** and **Stop** are
@@ -609,7 +611,11 @@ RAM, the GPU's own counter. When it fits, nothing happens. When it does not, hem
 model idle the longest, then the next, and finally asks an idle ComfyUI to drop its cached models,
 until it fits with `memoryReserveMB` (default 2048) to spare. A model answering a request is never
 unloaded; if nothing idle is left, hemera loads anyway and logs a warning. ComfyUI jobs ask for
-room the same way before they run.
+room the same way before they run, for their recipe's `memoryMB` (else `comfyui.memoryMB`). This
+cannot be left to ComfyUI: the free memory it reads from ROCm leaves out what the Vulkan engines
+and everything else on the machine hold, so beside a language model it starts a 70 GB video job in
+65 GB and the kernel kills it. The built-in recipes carry figures measured on a 128 GB Strix Halo at
+their default settings; a much longer or larger job than that needs more.
 
 ## Configuration
 

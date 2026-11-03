@@ -1278,7 +1278,7 @@ async function editRecipe(r) {
       if (rec && Object.keys(rec.params || {}).length && !confirm("Replace this recipe's files, settings and workflow with the new workflow's?")) return;
       try {
         const d = await draft(wf, rec && rec.title);
-        const keep = rec && !isNew ? { id: rec.id, title: rec.title, description: rec.description } : {};
+        const keep = rec && !isNew ? { id: rec.id, title: rec.title, description: rec.description, memoryMB: rec.memoryMB } : {};
         rec = Object.assign(d.recipe, keep.id ? keep : {}); cands = d.candidates; outs = d.outputs; notes = d.notes;
         draw();
       } catch (e) { fail(e); }

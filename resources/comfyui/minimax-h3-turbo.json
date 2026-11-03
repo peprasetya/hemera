@@ -3,6 +3,7 @@
  "title": "MiniMax H3 (turbo)",
  "kind": "video",
  "description": "Text, first-frame or first-and-last-frame to video with sound. This file has the turbo distillation merged in, so it runs in 8 steps.",
+ "memoryMB": 76800,
  "model": {
   "folder": "diffusion_models",
   "match": "(?i)^(?=.*turbo).*max[-_ ]?h3.*\\.safetensors$",
@@ -81,7 +82,7 @@
   },
   "height": {
    "type": "int",
-   "default": 432,
+   "default": 448,
    "min": 256,
    "max": 1088,
    "step": 32,
@@ -170,7 +171,7 @@
     ],
     "prompt": "",
     "width": 768,
-    "height": 432,
+    "height": 448,
     "length": 73
    }
   },

@@ -3,6 +3,7 @@
  "title": "MiniMax H3",
  "kind": "video",
  "description": "Text, first-frame or first-and-last-frame to video with sound.",
+ "memoryMB": 81920,
  "model": {
   "folder": "diffusion_models",
   "match": "(?i)max[-_ ]?h3.*\\.safetensors$",
@@ -89,7 +90,7 @@
   },
   "height": {
    "type": "int",
-   "default": 432,
+   "default": 448,
    "min": 256,
    "max": 1088,
    "step": 32,
@@ -208,7 +209,7 @@
     ],
     "prompt": "",
     "width": 768,
-    "height": 432,
+    "height": 448,
     "length": 73
    }
   },

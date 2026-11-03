@@ -3,6 +3,7 @@
  "title": "Pixal3D",
  "kind": "3d",
  "description": "Image to 3D mesh. Follows the source image most closely, camera angle included; vertex colours in minutes, or a UV-unwrapped mesh with PBR maps (slow: the unwrap runs on the CPU).",
+ "memoryMB": 40960,
  "model": {
   "folder": "diffusion_models",
   "match": "(?i)^pixal.?3d.*\\.safetensors$",

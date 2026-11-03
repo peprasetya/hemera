@@ -3,6 +3,7 @@
  "title": "Qwen-Image",
  "kind": "image",
  "description": "Text to image with the original 20B Qwen-Image; strong at text inside images.",
+ "memoryMB": 61440,
  "model": {
   "folder": "diffusion_models",
   "match": "(?i)^qwen[-_]?image.*\\.safetensors$",

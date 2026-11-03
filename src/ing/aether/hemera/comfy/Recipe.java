@@ -58,6 +58,8 @@ public final class Recipe
   public final String description;
   public final String modelFolder;
   public final String outputNode;
+  /** What a job of this family needs at its peak, in MB; 0 leaves it to comfyui.memoryMB. */
+  public final long memoryMB;
   public final List<Component> components = new ArrayList<>();
 
   private final Pattern modelMatch;
@@ -72,6 +74,7 @@ public final class Recipe
     title = Json.str(json, "title", id);
     kind = Json.str(json, "kind", "");
     description = Json.str(json, "description", "");
+    memoryMB = Json.num(json, "memoryMB", 0);
     if (id.isEmpty() || !List.of("image", "video", "3d").contains(kind))
       throw new IllegalArgumentException("a recipe needs an 'id' and a 'kind' of image, video or 3d");
 

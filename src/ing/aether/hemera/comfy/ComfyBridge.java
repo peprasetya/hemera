@@ -827,7 +827,7 @@ public final class ComfyBridge
         gc.accept(900);
       java.util.function.LongConsumer rm = roomMaker;
       if (rm != null)
-        rm.accept(wantedBytes());
+        rm.accept(wantedBytes(offer.recipe()));
       restartIfEnginesChanged();
       for (int attempt = 1;; attempt++)
       {
@@ -1436,10 +1436,15 @@ public final class ComfyBridge
     });
   }
 
-  /** Memory this bridge asks for before a job, in MB (comfyui.memoryMB). */
-  public long wantedBytes()
+  /**
+   * Memory to ask for before a job: its recipe's memoryMB, else comfyui.memoryMB. ComfyUI cannot be
+   * left to manage this itself: the free memory it reads from ROCm leaves out what the Vulkan engines
+   * and everything else hold, so beside a language model it starts a big job the machine cannot fit.
+   */
+  private long wantedBytes(Recipe recipe)
   {
-    return Json.num(conf(), "memoryMB", 24576) * 1024L * 1024;
+    long mb = recipe.memoryMB > 0 ? recipe.memoryMB : Json.num(conf(), "memoryMB", 24576);
+    return mb * 1024L * 1024;
   }
 
   private volatile java.util.function.LongConsumer roomMaker;

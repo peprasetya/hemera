@@ -3,6 +3,7 @@
  "title": "LTX-2.5",
  "kind": "video",
  "description": "Text or image to video with a generated soundtrack.",
+ "memoryMB": 81920,
  "model": {
   "folder": "diffusion_models",
   "match": "(?i)^ltx.?2\\.?5.*\\.safetensors$",
