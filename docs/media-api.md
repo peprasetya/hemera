@@ -35,6 +35,9 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
     { "id": "voxcpm2", "object": "model", "created": 1791656743, "owned_by": "hemera",
       "hemera": { "kind": "speech", "backend": "audio.cpp", "endpoint": "/v1/audio/speech" } },
 
+    { "id": "voxcpm2-npu", "object": "model", "created": 1791656743, "owned_by": "hemera",
+      "hemera": { "kind": "speech", "backend": "audio.cpp-npu", "endpoint": "/v1/audio/speech" } },
+
     { "id": "pixal3d_int8_convrot", "object": "model", "created": 1791656743, "owned_by": "comfyui",
       "hemera": {
         "kind": "3d", "backend": "comfyui", "family": "pixal3d", "title": "Pixal3D",
@@ -54,7 +57,7 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
 |---|---|
 | `kind` | `text`, `image`, `video`, `3d`, `transcription` (speech to text), `speech` (text to speech), `voice-changer`, or `diarization` (tells speakers apart; used through `transcription`) — what the model does. Group models by this. |
 | `endpoint` | Where to send a generation request for this model. |
-| `backend` | `llama.cpp`, `sd.cpp`, `proxy`, `comfyui`, … Informational. |
+| `backend` | `llama.cpp`, `sd.cpp`, `audio.cpp`, `audio.cpp-npu`, `proxy`, `comfyui`, … Informational. |
 | `family`, `title`, `description` | ComfyUI models only. `title` and `description` are fit to show to a user. |
 | `parameters` | ComfyUI models only. The request fields this model accepts — see below. |
 
@@ -355,7 +358,7 @@ OpenAI's speech API; any OpenAI SDK works against hemera.
 | Field | Notes |
 |---|---|
 | `model` | A model whose `hemera.kind` is `speech`. |
-| `input` | The text. Indonesian, English and mixtures of the two are fine with `voxcpm2`. |
+| `input` | The text. Indonesian, English and mixtures of the two are fine with `voxcpm2` and `voxcpm2-npu`. |
 | `voice` | A name from hemera's voice library (below) to speak in that person's voice, or a voice the model has built in. OpenAI's names (`alloy`, `nova`, …) mean "the model's default voice". |
 | `instructions` | A description of the voice to make up when no `voice` is given: "a young woman, warm and clear", "an elderly man, slow and calm". |
 | `response_format` | `mp3` (default), `opus` (Ogg), `aac`, `flac`, `wav`, or `pcm` (raw 16-bit mono at 24 kHz). |
@@ -371,9 +374,22 @@ for await (const ev of readSse(res.body)) {
 }
 ```
 
-With `voxcpm2`, streamed audio starts 0.15 s after the request and a sentence is made about 2.5×
-faster than it is spoken. Models that cannot stream (the `hemera` entry does not say; try it)
-answer in the same shape, all at once when they are done.
+Models that cannot stream (the `hemera` entry does not say; try it) answer in the same shape, all
+at once when they are done.
+
+`voxcpm2` and `voxcpm2-npu` are the same voice model on two engines, with the same voices, the same
+quality and the same request fields. The client chooses by the model's name:
+
+| | `voxcpm2` | `voxcpm2-npu` |
+|---|---|---|
+| Runs on | the GPU | the NPU |
+| Speed, nothing else running | 2.4× as fast as it is spoken | 1.8× |
+| Speed next to a generating LLM | 2.3× | 1.03–1.25×, no dropouts |
+| First streamed audio | 0.25 s | 0.25–0.4 s |
+| A generating LLM meanwhile | frozen for the length of the request | keeps generating |
+
+With `voxcpm2-npu`, the first request after the model loads and the first use of a voice from the
+library take about 4 s to the first audio.
 
 ### Voices
 
@@ -471,6 +487,11 @@ built from `hemera.parameters`.
   on size and length; speech about 35× faster than it was spoken with `whisper-large-v3-turbo`
   (0.3 s for a short utterance), about 13× with `whisper-large-v3` (0.9 s), which makes
   fewer mistakes (7% of words against 8% in Indonesian).
+- **LLMs wait while speech is made.** While a `/v1/audio/speech` request runs on a GPU model, hemera
+  freezes its llama.cpp engines, because the GPU cannot do both smoothly. Tokens from a streaming
+  chat pause for those seconds and then carry on; nothing is lost and no error is raised. Requests
+  marked `X-Hemera-Priority: background` do not cause this, and neither does `voxcpm2-npu`, which
+  runs on the NPU: the LLM keeps generating there, at the same voice quality.
 - **Speech requests queue too.** A speech model works on one recording at a time; requests made
   together are answered one after another (three short utterances: 0.3, 0.6 and 0.9 s).
 - **Text models** are a separate matter: `/v1/chat/completions` (OpenAI), `/v1/messages`

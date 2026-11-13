@@ -383,7 +383,19 @@ recipe takes up to three reference images this way.
 about for `comfyui.stallSeconds` (default 900 for images, 1800 for video and 3D) is taken as hung:
 hemera restarts ComfyUI and runs the job once more, and answers 504 if that hangs too. Each finished
 job logs its longest quiet spell (`journalctl -u hemera | grep "quiet spell"`), which is the number
-to set the limit from. While ComfyUI is stopped its models stay listed, and the next job starts it.
+to set the limit from. The hung job's last output goes to the log first, as the restart clears it.
+While ComfyUI is stopped its models stay listed, and the next job starts it.
+
+**Cancelling.** A cancelled job is removed from ComfyUI's queue or interrupted. If it is still
+running after `comfyui.cancelSeconds` (default 15), as a hung one will be, hemera kills ComfyUI
+to free the GPU. The next job starts it again, and a job that was waiting behind the cancelled one
+runs again by itself.
+
+**Engines changing under ComfyUI.** A running ComfyUI (ROCm) has hung on its next job after a Vulkan
+engine loaded or stopped, while a fresh one runs fine beside the same engines. So if any engine
+started or stopped since ComfyUI's last job, hemera restarts ComfyUI before running the new one,
+unless another job is in progress. That costs about 7 s, plus reloading its models if they were
+still in memory.
 
 Other keys: `python` (interpreter, when ComfyUI's virtualenv is not `venv/` or `.venv/` in or
 beside its folder), `args` (extra arguments for `main.py`), `env`, `autoStart` (default `true`:
@@ -494,6 +506,55 @@ by whisper-large-v3:
 Most of those "errors" are the recogniser writing numbers as digits; English and Indonesian came
 back word-perfect, including Indonesian–English mixtures. Latin ("Kyrie") is the weak spot.
 
+### LLMs wait while speech is made
+
+On one GPU under Vulkan an LLM crowds out speech almost completely. Measured with `voxcpm2`: alone,
+2.4× realtime; next to a generating LLM, 0.5×, which a listener hears as seconds of silence in a
+ten-second sentence, while the LLM loses only 5–10%. So hemera freezes its llama.cpp engines
+(`SIGSTOP`) for the few seconds a `/v1/audio/speech` request takes, and resumes them (`SIGCONT`) when
+it ends. Speech then runs at 2.4× with no dropouts next to any LLM. llama.cpp notices nothing but
+the wait, and an LLM writes faster than anyone speaks, so a reply being spoken loses nothing.
+
+Requests marked `X-Hemera-Priority: background` freeze nothing. Overlapping requests stay frozen
+until the last ends. `"speechPauseMaxSeconds"` (default 120) bounds one freeze, so a stuck speech
+engine cannot hold the LLMs for ever, and `"speechPausesLlm": false` turns all this off. The voice
+changer and live transcription do not freeze anything: they keep up next to an LLM (voice changer
+0.14 s behind instead of 0.11 s; a push-to-talk transcript in 0.7 s instead of 0.3 s).
+
+### Speech on the NPU
+
+An engine started with `--backend npu` or `cpu` leaves the GPU alone and freezes nothing. audio.cpp
+has an NPU build for Ryzen AI chips (its `docs/build/xdna-npu.md`). So the same voice model can be
+set up twice, once on each engine, and each client chooses by the model's name, as between any two
+models. Next to the `voxcpm2` above:
+
+```json
+"engines": { "audio.cpp-npu": { "binaryPath": "/path/to/npu-build/audiocpp_server", "argStyle": "audiocpp",
+                                "healthPath": "/health", "defaultArgs": ["--backend", "npu", "--threads", "2"] } },
+"models": [ { "name": "voxcpm2-npu", "engine": "audio.cpp-npu", "family": "voxcpm2", "mode": "streaming",
+              "file": "/path/to/voxcpm2-q8_0.gguf",
+              "session_options": { "voxcpm2.perf_mode": "cuda_perf", "voxcpm2.lm_threads": 8,
+                "voxcpm2.exec_plan": "{\"audiovae\":{\"impl\":\"ggml\",\"backend\":\"cpu\",\"params\":{\"threads\":2}}}" },
+              "default_request_options": { "retry_badcase": false, "stream_chunk_policy": "fixed",
+                                           "stream_frames_per_event": 1 } } ]
+```
+
+Whether a request freezes the LLMs follows from its model's engine: with `--backend npu` or `cpu`
+it does not. Measured through hemera with 7 s of Indonesian, 10 flow steps on both, next to Qwen3.8
+27B generating on the GPU. Word errors, reading back seven hard sentences: 3.3% on Vulkan, 2.1% on
+the NPU.
+
+| | Alone | Next to the LLM | The LLM meanwhile |
+|---|---|---|---|
+| `voxcpm2`, Vulkan | 2.4× realtime, first audio 0.24 s | 2.3×, first audio 0.27 s | frozen |
+| `voxcpm2-npu`, NPU | 1.8×, first audio 0.23 s | 1.03–1.25×, first audio 0.35 s | keeps generating, about 20 tokens/s |
+
+On the NPU there were no dropouts over 240 requests in a row next to the LLM. The margin is smallest
+in the LLM's first half minute of work (1.03–1.07×). Both engines also need the CPU and memory, which
+everything shares: with the LLM idle but a compile on all cores, `voxcpm2` fell to 1.1–1.2× and
+`voxcpm2-npu` to 0.8–0.9×, which a listener hears as gaps. If the NPU stops answering, the engine
+carries on on the CPU, slowly, and goes back by itself.
+
 ### Who said what
 
 `response_format=diarized_json` on `/v1/audio/transcriptions` gives OpenAI's speaker-labelled
@@ -567,6 +628,7 @@ Everything is one JSON document (`hemera.json`), editable in the UI or by hand:
     "dir": "/opt/ComfyUI",          // hemera starts it from here; or "url" for one already running
     "keepAliveSeconds": 300,        // idle time before it is asked to unload its models
     "stallSeconds": 900,            // silence before a job counts as hung (default 900 image, 1800 video/3D)
+    "cancelSeconds": 15,            // how long a cancelled job may keep running before ComfyUI is killed
     "assign": {}                    // file name -> recipe id, for files no pattern recognises
   },
   "engines": {
@@ -649,6 +711,7 @@ src/ing/aether/hemera/
 resources/web/         index.html, app.css, app.js
 resources/comfyui/     built-in recipes, one per model family
 docs/media-api.md      the image / video / 3D / speech contract for client authors
+docs/integrate-*.md    hand-off notes for aether.ing and spatiand: which endpoints, how, and what stays in the app
 ```
 
 ## License

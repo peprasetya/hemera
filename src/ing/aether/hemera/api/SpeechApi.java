@@ -111,12 +111,15 @@ public final class SpeechApi
     {
       Instance inst = im.ensure(model);
       inst.beginRequest();
+      // background work is what may wait, so it does not make anything else wait
+      Runnable resume = LiveGate.background(ex) ? () -> {} : im.pauseLlmsForSpeech(model);
       try
       {
         String url = "http://127.0.0.1:" + inst.port + "/v1/audio/speech";
         if (streamFormat == null)
         {
           byte[] wav = Upstream.postJsonRaw(url, up).body();
+          resume.run();
           Router.sendBytes(ex, 200, convert(wav, format), CONTENT_TYPES.get(format));
         }
         else if ("streaming".equals(Json.str(model, "mode", "offline")))
@@ -126,6 +129,7 @@ public final class SpeechApi
       }
       finally
       {
+        resume.run();
         inst.endRequest();
       }
     }

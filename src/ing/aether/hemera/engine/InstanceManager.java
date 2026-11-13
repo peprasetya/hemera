@@ -115,6 +115,7 @@ public final class InstanceManager
       }
       Instance started = start(model);
       instances.put(name, started);
+      engineChanges.incrementAndGet();
       loads.remove(name);
       return started;
     }
@@ -391,6 +392,7 @@ public final class InstanceManager
   private final List<java.util.function.BooleanSupplier> reclaimers = new java.util.concurrent.CopyOnWriteArrayList<>();
 
   private volatile Runnable gpuReleaser;
+  private final java.util.concurrent.atomic.AtomicLong engineChanges = new java.util.concurrent.atomic.AtomicLong();
 
   /** Called before an engine starts: lets ComfyUI step aside, since the two hang each other on a shared GPU. */
   public void setGpuReleaser(Runnable releaser)
@@ -576,6 +578,7 @@ public final class InstanceManager
       return false;
     Log.info("instance", "Stopping '" + name + "' (pid " + i.process.pid() + ")");
     stopProcess(i.process);
+    engineChanges.incrementAndGet();
     return true;
   }
 
@@ -599,7 +602,14 @@ public final class InstanceManager
     {
       Thread.currentThread().interrupt();
     }
+    engineChanges.incrementAndGet();
     return true;
+  }
+
+  /** Counts every engine started or stopped; ComfyUI compares it between jobs. */
+  public long engineChanges()
+  {
+    return engineChanges.get();
   }
 
   public void stopAll()
@@ -620,8 +630,108 @@ public final class InstanceManager
     return out;
   }
 
+  // ---- llama.cpp waits while speech is made -----------------------------------------
+
+  private final Object speechLock = new Object();
+  private final java.util.Set<Process> frozen = new java.util.HashSet<>();
+  private int speaking;
+  private long speechRun;
+
+  /** Unless its arguments say --backend npu or cpu, a speech engine is taken to be on the GPU. */
+  private boolean speaksOnGpu(Map<String, Object> model)
+  {
+    List<String> args = new ArrayList<>(Json.strList(cfg.engine(Json.str(model, "engine", "")), "defaultArgs"));
+    args.addAll(Json.strList(model, "args"));
+    int at = args.lastIndexOf("--backend");
+    return at < 0 || at + 1 >= args.size() || !List.of("npu", "cpu").contains(args.get(at + 1));
+  }
+
+  /**
+   * Freeze the running llama.cpp engines (SIGSTOP) until the returned action is run. On one GPU
+   * under Vulkan an LLM crowds out speech almost completely: measured, voxcpm2 fell from 2.4x
+   * realtime to 0.5x, which a listener hears as dropouts, while the LLM lost only 5-10%. An LLM
+   * writes faster than anyone speaks, so it can wait the few seconds a sentence takes to make,
+   * and carries on from where it was. "speechPausesLlm": false turns this off;
+   * "speechPauseMaxSeconds" (default 120) bounds one freeze, so a stuck speech engine cannot
+   * hold the LLMs for ever. Speech made on the NPU or the CPU has no GPU to fight over and freezes
+   * nothing.
+   */
+  public Runnable pauseLlmsForSpeech(Map<String, Object> model)
+  {
+    if (!Json.bool(cfg.data(), "speechPausesLlm", true) || !speaksOnGpu(model))
+      return () -> {};
+    synchronized (speechLock)
+    {
+      if (speaking++ == 0)
+      {
+        long run = ++speechRun;
+        long maxMs = Json.num(cfg.data(), "speechPauseMaxSeconds", 120) * 1000L;
+        Thread.ofVirtual().name("speech-pause-limit").start(() -> {
+          try
+          {
+            Thread.sleep(maxMs);
+          }
+          catch (InterruptedException e)
+          {
+            return;
+          }
+          synchronized (speechLock)
+          {
+            if (speechRun == run && speaking > 0 && !frozen.isEmpty())
+            {
+              Log.warn("instance", "Speech has kept the LLMs frozen for " + maxMs / 1000 + " s; letting them run");
+              thaw();
+            }
+          }
+        });
+        List<Process> freeze = new ArrayList<>();
+        for (Instance i : instances.values())
+        {
+          Map<String, Object> m = cfg.findModel(i.name);
+          if (m != null && i.alive() && "llama".equals(Engines.argStyle(cfg, Json.str(m, "engine", "llama.cpp"))))
+            freeze.add(i.process);
+        }
+        signal("-STOP", freeze);
+        frozen.addAll(freeze);
+      }
+    }
+    java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean();
+    return () -> {
+      if (done.compareAndSet(false, true))
+        synchronized (speechLock)
+        {
+          if (--speaking == 0)
+            thaw();
+        }
+    };
+  }
+
+  private void thaw()
+  {
+    signal("-CONT", List.copyOf(frozen));
+    frozen.clear();
+  }
+
+  private static void signal(String signal, List<Process> processes)
+  {
+    if (processes.isEmpty())
+      return;
+    List<String> cmd = new ArrayList<>(List.of("kill", signal));
+    for (Process p : processes)
+      cmd.add(String.valueOf(p.pid()));
+    try
+    {
+      new ProcessBuilder(cmd).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start().waitFor();
+    }
+    catch (IOException | InterruptedException e)
+    {
+      Log.warn("instance", "Could not send " + signal + " to the LLM engines: " + e.getMessage());
+    }
+  }
+
   private static void stopProcess(Process p)
   {
+    signal("-CONT", List.of(p)); // a frozen process cannot act on being asked to stop
     p.destroy();
     try
     {

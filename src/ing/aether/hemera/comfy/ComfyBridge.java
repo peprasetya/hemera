@@ -90,6 +90,7 @@ public final class ComfyBridge
   {
     private volatile String promptId;
     private volatile boolean cancelled;
+    private volatile long cancelledAt;
     private volatile boolean started;
     private volatile int progress;
     private volatile long lastActivity = System.currentTimeMillis();
@@ -121,6 +122,8 @@ public final class ComfyBridge
     /** Stop it, wherever it is: dropped from ComfyUI's queue, or interrupted if it is running. */
     public void cancel()
     {
+      if (cancelledAt == 0)
+        cancelledAt = System.currentTimeMillis();
       cancelled = true;
       String id = promptId;
       if (id == null)
@@ -825,6 +828,7 @@ public final class ComfyBridge
       java.util.function.LongConsumer rm = roomMaker;
       if (rm != null)
         rm.accept(wantedBytes());
+      restartIfEnginesChanged();
       for (int attempt = 1;; attempt++)
       {
         try
@@ -833,6 +837,12 @@ public final class ComfyBridge
         }
         catch (Stalled s)
         {
+          if (s.process == null && !run.cancelled)
+          {
+            Log.info("comfyui", "'" + offer.id() + "' lost its ComfyUI to another job's cancel; running it again");
+            continue;
+          }
+          logHungOutput();
           if (attempt >= 2 || run.cancelled)
             throw new HttpError(504, "ComfyUI made no progress on '" + offer.id() + "' for " + s.seconds
                 + "s, twice — it was restarted both times; its last output is on the ComfyUI card in /configure/");
@@ -877,6 +887,77 @@ public final class ComfyBridge
     return "image".equals(offer.recipe().kind) ? 900 : 1800;
   }
 
+  /**
+   * A ComfyUI (ROCm) that stays up while a Vulkan engine loads or stops hangs on its next job, and
+   * a fresh one runs fine beside the same engines. So it restarts first, which costs seconds where
+   * a hang costs stallSeconds. A job in progress is never interrupted: the next job sees the change.
+   */
+  private synchronized void restartIfEnginesChanged() throws Exception
+  {
+    java.util.function.LongSupplier changes = engineChanges;
+    if (changes == null)
+      return;
+    long now = changes.getAsLong();
+    Process p = process;
+    if (now == enginesSeen || p == null || !p.isAlive() || dir().isEmpty())
+      return;
+    if (active.get() > 1)
+      return;
+    Log.info("comfyui", "Engines changed since ComfyUI's last job; restarting it first");
+    restartStalled(p);
+    enginesSeen = now;
+  }
+
+  /** The restart that follows clears the output, and with it the only sign of where the job hung. */
+  private void logHungOutput()
+  {
+    for (Object line : outputTail())
+      Log.warn("comfyui", "hung job's output: " + String.valueOf(line).replaceAll("\\u001B\\[[0-9;]*m", ""));
+  }
+
+  /** How long a cancelled job gets to stop by itself; a healthy one stops within a sampling step. */
+  private long cancelSeconds()
+  {
+    return Json.num(conf(), "cancelSeconds", 15);
+  }
+
+  /**
+   * A hung ComfyUI ignores its interrupt, and would hold the GPU until somebody restarted it. A job
+   * that has only left the queue is not worth this: something else is running. The next job starts
+   * ComfyUI again.
+   */
+  private void killCancelled(Run run, Process serving) throws InterruptedException
+  {
+    String id = run.promptId;
+    if (id == null || serving == null || serving != process || !serving.isAlive())
+      return;
+    try
+    {
+      if (!Json.write(Json.obj(get("/queue", 5)).get("queue_running")).contains(id))
+        return;
+    }
+    catch (InterruptedException e)
+    {
+      throw e;
+    }
+    catch (Exception e)
+    {
+      Log.debug("comfyui", "ComfyUI did not say what it is running: " + e);
+    }
+    Log.warn("comfyui", "Cancelled job " + id + " did not stop within " + cancelSeconds() + "s; killing ComfyUI");
+    logHungOutput();
+    synchronized (restartLock)
+    {
+      if (serving == process && serving.isAlive())
+      {
+        stoppedByUs = serving;
+        killedForCancel = serving;
+        serving.destroyForcibly();
+        serving.waitFor(10, TimeUnit.SECONDS);
+      }
+    }
+  }
+
   private final Object restartLock = new Object();
 
   /** Restart the ComfyUI that hung, unless another stalled job already did. */
@@ -918,6 +999,13 @@ public final class ComfyBridge
       for (long tick = 1;; tick++)
       {
         Thread.sleep(1000);
+        if (run.cancelled && System.currentTimeMillis() - run.cancelledAt > cancelSeconds() * 1000)
+        {
+          killCancelled(run, serving);
+          throw new HttpError(409, "the request was cancelled");
+        }
+        if (!run.cancelled && serving != null && serving == killedForCancel)
+          throw new Stalled(null, 0);
         Map<String, Object> entry;
         try
         {
@@ -1218,6 +1306,9 @@ public final class ComfyBridge
     ProcessBuilder pb = new ProcessBuilder(cmd).directory(home.toFile()).redirectErrorStream(true);
     Json.obj(conf().get("env")).forEach((k, v) -> pb.environment().put(k, String.valueOf(v)));
     Log.info("comfyui", "Starting ComfyUI: " + String.join(" ", cmd) + " (in " + home + ")");
+    java.util.function.LongSupplier changes = engineChanges;
+    if (changes != null)
+      enginesSeen = changes.getAsLong();
     process = pb.start();
     // if memory runs out, the kernel should take ComfyUI rather than the gateway
     try
@@ -1353,6 +1444,15 @@ public final class ComfyBridge
 
   private volatile java.util.function.LongConsumer roomMaker;
   private volatile java.util.function.LongConsumer gpuClearer;
+  private volatile java.util.function.LongSupplier engineChanges;
+  private volatile long enginesSeen;
+  private volatile Process killedForCancel;
+
+  /** How many times an engine has started or stopped, to tell whether ComfyUI has lived through one. */
+  public void setEngineChanges(java.util.function.LongSupplier changes)
+  {
+    engineChanges = changes;
+  }
 
   /** Unloads every other engine before a job (comfyui.exclusiveGpu, off by default). */
   public void setGpuClearer(java.util.function.LongConsumer clearer)

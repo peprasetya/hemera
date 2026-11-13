@@ -87,6 +87,7 @@ public final class Hemera
     im.setGpuReleaser(comfy::releaseGpu);
     comfy.setGpuClearer(im::clearGpu);
     comfy.setRoomMaker(need -> im.makeRoom("ComfyUI", need));
+    comfy.setEngineChanges(im::engineChanges);
 
     Router router = new Router();
     // Root: ollama clients probe "GET /" for the plain-text banner; browsers get the UI.
