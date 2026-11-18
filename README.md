@@ -2,6 +2,28 @@
 
 **A flexible wrapper and router for local AI engines — part of the [aether.ing](https://aether.ing) project.**
 
+Website: **[aether.ing/hemera](https://aether.ing/hemera/)** · Download:
+**[hemera.jar](https://github.com/peprasetya/hemera/releases/latest/download/hemera.jar)** (latest release) ·
+Client contract: [docs/media-api.md](docs/media-api.md)
+
+## Where the idea came from
+
+To be honest about it, the concept is not new. Two servers shaped it:
+
+- **[Ollama](https://ollama.com)** made a local model one command away, and its API became the one
+  every tool speaks. Hemera keeps that API — the `ollama` CLI works against it unchanged — along
+  with loading on the first request, unloading when idle, and reading ollama's own model store.
+- **[Lemonade Server](https://lemonade-server.ai)** showed that one local OpenAI-compatible server
+  can sit in front of several engines, serve more than text, and treat AMD hardware, NPU included,
+  as first class.
+
+Both choose the engine build for you. Hemera wanted more flexibility than that: any release of
+llama.cpp next to any other, pinned per model; several different binaries (stable-diffusion.cpp,
+whisper.cpp, audio.cpp, ds4, ollama's own fork, anything you built yourself) behind the same port;
+a backend chosen per model rather than per machine; a bridge to ComfyUI for the models that only
+exist as workflows; and, where the OpenAI specification has no endpoint at all, one of its own —
+`/v1/3d/generations` for image-to-3D.
+
 ## Why
 
 llama.cpp moves fast. On a single day (2026-08-04) it shipped `b10253`, `b10254`, and `b10255` —
@@ -36,17 +58,39 @@ what configuring it needs. Applications such as [aether.ing](https://aether.ing)
 discover what a hemera server offers through its API.
 
 Zero dependencies: no Maven, no Gradle, no frameworks, no web server library — just a JDK 21+ and
-one jar of about 240 KB you can drop on any machine.
+one jar of about 330 KB you can drop on any machine.
 
-## Build & run
+## Supported engines
+
+| Engine | Makes | How hemera gets it | Backends | Served on |
+|---|---|---|---|---|
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | text, tools, reasoning, vision/audio input, embeddings | managed: every release and variant side by side | ROCm, Vulkan, CUDA, SYCL, CPU | `/v1/chat/completions` `/api/chat` `/v1/messages` `/v1/embeddings` |
+| [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | images, edits, video | managed, like llama.cpp | Vulkan, ROCm | `/v1/images/*` `/v1/videos` |
+| [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `whisper-server` | transcription, translation, live dictation | `binaryPath` (build with `-DGGML_VULKAN=ON`) | Vulkan, CPU | `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/realtime` |
+| [audio.cpp](https://github.com/0xShug0/audio.cpp) `audiocpp_server` | text to speech, diarization, voice conversion | `binaryPath` | Vulkan, XDNA NPU, CPU | `/v1/audio/speech` `/v1/audio/voices` `/v1/audio/voice-changer` |
+| ollama's bundled `llama-server` | models upstream llama.cpp rejects yet, embedded vision towers | `binaryPath` + `libraryPaths` | ROCm, Vulkan, CUDA | as llama.cpp |
+| [ds4](https://github.com/antirez/ds4), any OpenAI-style server | whatever it serves | **Add engine** / `binaryPath` | your build | as llama.cpp |
+| [ComfyUI](https://github.com/comfyanonymous/ComfyUI) | image, video and 3D workflows | bridged, not managed | whatever it runs on | `/v1/images/*` `/v1/videos` `/v1/3d/generations` |
+| remote providers | DeepSeek, OpenAI, Gemini, Claude | `proxies`, `type` `openai` or `anthropic` | — | all three dialects |
+
+Each is described in its own section below.
+
+## Install
+
+Download the jar from the [latest release](https://github.com/peprasetya/hemera/releases/latest)
+and run it with any JDK 21 or newer (Linux x86-64; the reference machine is an AMD Ryzen AI Max+
+395 with a Radeon 8060S, 128 GB and an XDNA NPU on Ubuntu):
 
 ```sh
-./build.sh                  # -> hemera.jar (compiles into bin/, same output dir as Eclipse)
-```
-
-```sh
+mkdir -p /opt/hemera && cd /opt/hemera
+curl -LO https://github.com/peprasetya/hemera/releases/latest/download/hemera.jar
 java -jar hemera.jar [--home <dir>] [--port 12434] [--log info|debug|trace]
 ```
+
+Then open `http://host:12434/`: install a llama.cpp release in **Engines**, add model folders in
+**Directories**, configure models in **Models**. GPU runtimes (Mesa/Vulkan, ROCm, CUDA) must be
+installed on the machine; hemera finds their libraries itself. ffmpeg on the PATH is optional,
+for speech formats other than WAV.
 
 Data (config `hemera.json`, engine binaries under `binary/`) lives next to the jar by default;
 override with `--home` or `HEMERA_HOME`. For systemd, install [hemera.service](hemera.service) to
@@ -54,6 +98,23 @@ override with `--home` or `HEMERA_HOME`. For systemd, install [hemera.service](h
 `OOMPolicy=continue`: engines are children of hemera and share its cgroup, so without it a model
 too large for RAM takes the whole gateway down with it. Hemera also marks engine processes as
 preferred OOM victims, so an oversized model costs you that model rather than every loaded model.
+
+Or build it yourself — one `javac` and one `jar` call, no build system:
+
+```sh
+./build.sh                  # -> hemera.jar (compiles into bin/, same output dir as Eclipse)
+```
+
+### Connecting clients
+
+Hemera does not check API keys: give clients any value, and put it behind your own proxy if it
+faces a network you do not trust.
+
+```sh
+OLLAMA_HOST=host:12434 ollama list                                  # Ollama CLI and clients
+OPENAI_BASE_URL=http://host:12434/v1 OPENAI_API_KEY=local python app.py   # OpenAI SDKs
+ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local claude --model qwen3-coder  # Claude Code
+```
 
 ## Web UI
 
@@ -718,6 +779,7 @@ resources/web/         index.html, app.css, app.js
 resources/comfyui/     built-in recipes, one per model family
 docs/media-api.md      the image / video / 3D / speech contract for client authors
 docs/integrate-*.md    hand-off notes for aether.ing and spatiand: which endpoints, how, and what stays in the app
+site/index.html        the website at aether.ing/hemera (self-contained, no external assets)
 ```
 
 ## License
