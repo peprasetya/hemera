@@ -300,6 +300,8 @@ WARN  [instance] 'qwen3-coder' may fall back to CPU: 3 libraries not found
         <h2>ComfyUI bridge</h2>
         <p class="section-lede">Some models only run as a ComfyUI workflow — the 3D ones, and video models newer than stable-diffusion.cpp supports. Hemera fronts ComfyUI over the same HTTP API ComfyUI's own page uses: nothing is installed into it and none of its files are touched.</p>
 
+        <div class="callout"><b>Hemera offers a ComfyUI model only when a recipe covers its family.</b> ComfyUI has no "run this file" call — it runs whole workflows — and a model file does not say which nodes it needs. The built-in recipes cover TRELLIS.2, Pixal3D, Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain and turbo) and Qwen-Image (and 2.1 Turbo). For any other model, make a recipe once from a workflow that runs it (see <a href="#recipes">Recipes</a>); after that every file of that family is picked up by itself. Files no recipe recognises are listed under <i>Not recognised</i> in the Directories tab.</div>
+
         <h3 id="comfy-setup">Setup</h3>
         <ol class="steps-list">
           <li><b>Have a working ComfyUI</b> with the custom nodes and model files the families you want need (TRELLIS.2, Hunyuan3D 2.1, LTX-2.5…). Check one workflow runs in ComfyUI's own page first.</li>

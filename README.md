@@ -374,7 +374,9 @@ where ComfyUI is, in the Directories tab or in `hemera.json`:
 }
 ```
 
-That is the whole setup. Nothing is installed into ComfyUI and none of its files are touched.
+That is the whole setup for the families hemera has a recipe for (see *Recipes* below); any other
+model needs a recipe first, made once from a workflow that runs it. Nothing is installed into
+ComfyUI and none of its files are touched.
 hemera asks it, over the same HTTP API its own page uses, which model files and which nodes it
 has, and every model it knows a workflow for appears in `/v1/models` under the name of its file:
 

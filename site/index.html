@@ -269,8 +269,8 @@
       </div>
       <div class="steps">
         <div class="step reveal"><h3>Point at it</h3><p>Tell hemera where ComfyUI is. Nothing is installed into it and none of its files are touched.</p></div>
-        <div class="step reveal"><h3>Hemera looks</h3><p>It asks ComfyUI which model files and nodes it has. Drop in a new file and it is offered within half a minute.</p></div>
-        <div class="step reveal"><h3>Recipes match</h3><p>A recipe turns a family of files into a model. Built-ins cover the popular ones; your own are drafted from a workflow export.</p></div>
+        <div class="step reveal"><h3>Hemera looks</h3><p>It asks ComfyUI which model files and nodes it has. A new file of a family it knows is offered within half a minute.</p></div>
+        <div class="step reveal"><h3>Recipes match</h3><p>A recipe — the workflow, and which input is the prompt, seed, size or image — turns a family of files into a model. Only families with a recipe are offered.</p></div>
         <div class="step reveal"><h3>Requests run</h3><p>An OpenAI-shaped request fills the workflow and returns the image, the mp4 or the <code>.glb</code> — with progress and cancel.</p></div>
       </div>
       <div class="split" style="align-items:start">
@@ -295,8 +295,11 @@
             <span class="chip"><b>video</b>LTX-2.5</span><span class="chip"><b>video</b>MiniMax H3 · turbo</span>
             <span class="chip"><b>image</b>Qwen-Image</span><span class="chip"><b>image</b>Qwen-Image 2.1 Turbo</span>
           </div>
-          <a class="more" href="docs/#comfyui">Set up the bridge →</a>
+          <a class="more" href="docs/#recipes">Set up the bridge and its recipes →</a>
         </div>
+      </div>
+      <div class="honest reveal">
+        <b>Each family needs a recipe.</b> A model file alone does not tell hemera how to run it: ComfyUI runs whole workflows, and which nodes a file needs lives in workflows, not in the file. So hemera offers a ComfyUI model only when a recipe covers its family. The built-in recipes cover the eight families above; any other model needs one recipe, made once from a workflow that runs it in ComfyUI. Files no recipe recognises are listed in the web UI, never offered by guesswork.
       </div>
     </div>
   </section>
