@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hemera Docs — setup, engines, ComfyUI and API</title>
+  <meta name="description" content="How to install and run hemera, which engine binaries it supports and how to add them, how to bridge ComfyUI, set up speech, and use the 3D generation API.">
+  <meta name="theme-color" content="#0b0e14">
+  <meta property="og:title" content="Hemera Docs — setup, engines, ComfyUI and API">
+  <meta property="og:description" content="Install hemera, add engines and models, bridge ComfyUI, set up speech, and call the 3D API.">
+  <meta property="og:image" content="https://aether.ing/aether.png">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='13' fill='%23f5b14c'/%3E%3Cg stroke='%23f5b14c' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="../../aether.png">
+  <link rel="stylesheet" href="../style.css?v=1">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="../">
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" aria-hidden="true"><circle cx="32" cy="32" r="12" fill="currentColor"/><g stroke="currentColor" stroke-width="5" stroke-linecap="round"><path d="M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7"/></g></svg>
+      <span><strong>hemera</strong> <small>docs</small></span>
+    </a>
+    <nav class="nav-links">
+      <a class="hide-sm" href="../#features">Features</a>
+      <a class="hide-sm" href="../#comfyui">ComfyUI</a>
+      <a class="hide-sm" href="../#three">3D</a>
+      <a class="on" href="./">Docs</a>
+      <a class="btn btn-ghost" href="https://github.com/peprasetya/hemera"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="doc-hero">
+    <div class="wrap">
+      <div class="eyebrow">Documentation</div>
+      <h1>Set up and run hemera.</h1>
+      <p class="sub">From a downloaded jar to your first model, then engines, ComfyUI, speech and the 3D API. Everything here is also in the <a href="https://github.com/peprasetya/hemera#readme">README</a>; the full client contract for media endpoints is <a href="https://github.com/peprasetya/hemera/blob/main/docs/media-api.md">docs/media-api.md</a>.</p>
+      <div class="cta" style="justify-content:flex-start;margin:26px 0 0">
+        <a class="btn btn-sun" href="https://github.com/peprasetya/hemera/releases/latest/download/hemera.jar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download hemera.jar</a>
+        <a class="btn btn-ghost" href="#install">Start installing</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap doc-layout">
+    <aside class="toc" aria-label="On this page">
+      <div class="toc-label">On this page</div>
+      <ol>
+        <li><a href="#install">Install</a>
+          <ol>
+            <li><a href="#requirements">Requirements</a></li>
+            <li><a href="#run">Download and run</a></li>
+            <li><a href="#service">Run as a service</a></li>
+            <li><a href="#build">Build from source</a></li>
+          </ol>
+        </li>
+        <li><a href="#first-model">Your first model</a></li>
+        <li><a href="#clients">Connect clients</a></li>
+        <li><a href="#engines">Engines</a>
+          <ol>
+            <li><a href="#engine-table">Supported binaries</a></li>
+            <li><a href="#versions">Versions and variants</a></li>
+            <li><a href="#custom">Custom engines</a></li>
+            <li><a href="#gpu">GPU runtimes</a></li>
+          </ol>
+        </li>
+        <li><a href="#models">Models</a></li>
+        <li><a href="#comfyui">ComfyUI bridge</a>
+          <ol>
+            <li><a href="#comfy-setup">Setup</a></li>
+            <li><a href="#recipes">Recipes</a></li>
+            <li><a href="#comfy-memory">Memory and recovery</a></li>
+          </ol>
+        </li>
+        <li><a href="#speech">Speech</a></li>
+        <li><a href="#three">3D API</a></li>
+        <li><a href="#api">API surface</a></li>
+        <li><a href="#config">Configuration</a></li>
+      </ol>
+    </aside>
+
+    <div class="doc">
+
+      <!-- ======================= INSTALL ======================= -->
+      <section id="install">
+        <h2>Install</h2>
+        <p class="section-lede">Hemera is one executable jar with no dependencies beyond a JDK. It manages the engines it runs as child processes, so it needs to live on the machine with the GPU.</p>
+
+        <h3 id="requirements">Requirements</h3>
+        <ul>
+          <li><b>Linux x86-64</b> and a <b>JDK 21 or newer</b> (OpenJDK is fine). No Maven, no Python, no containers.</li>
+          <li><b>A GPU runtime</b> for the engines you want — Mesa/Vulkan drivers, ROCm, or CUDA. Hemera finds the libraries itself (see <a href="#gpu">GPU runtimes</a>).</li>
+          <li><b>ffmpeg</b> on the <code>PATH</code> (optional) — needed for speech input other than WAV/MP3/FLAC and for MP3, Opus, AAC or FLAC speech output.</li>
+          <li><b>Model files</b> — GGUFs anywhere on disk, or an existing ollama store.</li>
+        </ul>
+        <div class="callout info">The reference machine is an AMD Ryzen AI Max+ 395 (Radeon 8060S, 128 GB shared memory, XDNA NPU) on Ubuntu. Nothing in hemera is vendor-specific; the figures quoted in these docs were measured there.</div>
+
+        <h3 id="run">Download and run</h3>
+        <div class="term">
+          <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
+<pre>mkdir -p /opt/hemera && cd /opt/hemera
+curl -LO https://github.com/peprasetya/hemera/releases/latest/download/hemera.jar
+java -jar hemera.jar --port 12434</pre>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Option</th><th>Default</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>--port</code></td><td><code>12434</code></td><td>Port for every API and the web UI.</td></tr>
+              <tr><td><code>--home</code> / <code>HEMERA_HOME</code></td><td>the jar's folder</td><td>Where <code>hemera.json</code>, engine binaries (<code>binary/</code>), the voice library and run files live.</td></tr>
+              <tr><td><code>--log</code></td><td><code>info</code></td><td><code>debug</code> adds engine output, <code>trace</code> adds HTTP bodies.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Then open <code>http://host:12434/</code> in a browser — it redirects to the configure UI.</p>
+
+        <h3 id="service">Run as a service</h3>
+        <p>The repository ships a systemd unit. It sets <code>OOMPolicy=continue</code>: engines are children of hemera and share its cgroup, so without it a model too large for memory would take the whole gateway down. Hemera also marks engine processes as preferred OOM victims, so an oversized model costs that model only. It starts Java with <code>-Djdk.lang.Process.launchMechanism=FORK</code>, which avoids an intermittent "Failed to exec spawn helper" when engines start under memory pressure.</p>
+        <div class="term">
+          <div class="bar"><span>shell, as root</span><button class="copy" type="button">Copy</button></div>
+<pre>curl -L -o /etc/systemd/system/hemera.service \
+  https://raw.githubusercontent.com/peprasetya/hemera/main/hemera.service
+systemctl daemon-reload && systemctl enable --now hemera
+journalctl -u hemera -f</pre>
+        </div>
+        <p>The unit expects the jar at <code>/opt/hemera/hemera.jar</code>; edit <code>WorkingDirectory</code> and <code>ExecStart</code> for another place. Hemera prints no timestamps — journald adds them.</p>
+
+        <h3 id="build">Build from source</h3>
+        <p>There is no build system: <code>build.sh</code> is one <code>javac</code> and one <code>jar</code> call.</p>
+        <div class="term">
+          <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
+<pre>git clone https://github.com/peprasetya/hemera.git && cd hemera
+./build.sh                  # -> hemera.jar</pre>
+        </div>
+      </section>
+
+      <!-- ======================= FIRST MODEL ======================= -->
+      <section id="first-model">
+        <h2>Your first model</h2>
+        <p class="section-lede">Everything below can also be written by hand into <code>hemera.json</code>, but the web UI is the quickest way in. It is plain HTML with no third-party assets, follows your OS light/dark theme and works on a phone.</p>
+        <ol class="steps-list">
+          <li><b>Engines</b> — open the release browser, pick a llama.cpp release and a variant (for example <code>ubuntu-vulkan-x64</code> or <code>ubuntu-rocm</code>) and install it. The row shows whether the GPU runtime that build needs was found.</li>
+          <li><b>Directories</b> — add the folders that hold your GGUF files, and ollama's model store if you have one (for example <code>/usr/share/ollama/.ollama/models</code>).</li>
+          <li><b>Models</b> — the scan lists every file it found. Configure one: give it a name, choose the engine and version, adjust context size or arguments. Vision projectors, MTP draft heads, VAEs and text encoders are paired automatically.</li>
+          <li><b>Load</b> — starts the model now instead of at the first request, and reports its progress or the error. The <b>Dashboard</b> shows what is running, on which port and PID.</li>
+        </ol>
+        <p>Other tabs: <b>Images</b> to try an image model without curl, <b>Voices</b> for the voice library, <b>Proxies</b> for remote providers, <b>Settings</b> for port, log level, keep-alive and per-engine default arguments.</p>
+        <div class="callout"><b>Files are never deleted by accident.</b> <code>ollama rm</code> and <strong>Remove</strong> only drop a configuration. Deleting a model file is a separate action in the Models tab that names every configured model it takes along and asks you to type the filename. Files inside an ollama store, or outside your model folders, can never be deleted.</div>
+      </section>
+
+      <!-- ======================= CLIENTS ======================= -->
+      <section id="clients">
+        <h2>Connect clients</h2>
+        <p>Every client sees the same model list on the same port. Hemera does not check API keys — give clients any value, and put hemera behind your own reverse proxy if it faces a network you do not trust.</p>
+        <div class="term">
+          <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
+<pre><span class="c"># Ollama CLI, and anything that speaks Ollama</span>
+OLLAMA_HOST=host:12434 ollama list
+OLLAMA_HOST=host:12434 ollama run qwen3-coder
+
+<span class="c"># OpenAI SDKs and OpenAI-compatible tools</span>
+OPENAI_BASE_URL=http://host:12434/v1 OPENAI_API_KEY=local python app.py
+
+<span class="c"># Claude Code on a local model, through /v1/messages</span>
+ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
+  claude --model qwen3-coder</pre>
+        </div>
+        <p>Streaming, tool calls and reasoning tokens are translated across all three dialects. Images go in the Ollama or OpenAI way when the model has a vision projector.</p>
+      </section>
+
+      <!-- ======================= ENGINES ======================= -->
+      <section id="engines">
+        <h2>Engines</h2>
+        <p class="section-lede">An engine is a server binary hemera starts on demand, one process per loaded model. <b>Managed</b> engines are downloaded from their GitHub releases and version-tracked; <b>custom</b> engines are a binary path you provide.</p>
+
+        <h3 id="engine-table">Supported binaries</h3>
+        <div class="table-wrap">
+          <table class="engines-table">
+            <thead><tr><th>Engine</th><th>Makes</th><th>How hemera gets it</th><th>Backends</th><th>Served on</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>llama.cpp</b><br><small>ggml-org/llama.cpp</small></td>
+                <td>Text, tool calls, reasoning, vision &amp; audio input, embeddings</td>
+                <td>Managed — every release and variant side by side</td>
+                <td><div class="tags"><span class="tag sun">ROCm</span><span class="tag ind">Vulkan</span><span class="tag">CUDA</span><span class="tag">SYCL</span><span class="tag">CPU</span></div></td>
+                <td><code>/v1/chat/completions</code> <code>/api/chat</code> <code>/v1/messages</code> <code>/v1/embeddings</code></td>
+              </tr>
+              <tr>
+                <td><b>stable-diffusion.cpp</b><br><small>leejet/stable-diffusion.cpp</small></td>
+                <td>Images, image edits with several references, video</td>
+                <td>Managed, like llama.cpp</td>
+                <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag sun">ROCm</span></div></td>
+                <td><code>/v1/images/generations</code> <code>/v1/images/edits</code> <code>/v1/videos</code></td>
+              </tr>
+              <tr>
+                <td><b>whisper.cpp</b><br><small>whisper-server</small></td>
+                <td>Transcription, translation, live dictation</td>
+                <td>Custom — build with <code>-DGGML_VULKAN=ON</code></td>
+                <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag">CPU</span></div></td>
+                <td><code>/v1/audio/transcriptions</code> <code>/v1/audio/translations</code> <code>/v1/realtime</code></td>
+              </tr>
+              <tr>
+                <td><b>audio.cpp</b><br><small>audiocpp_server</small></td>
+                <td>Text to speech, speaker diarization, live voice conversion</td>
+                <td>Custom; hemera writes its model config per model</td>
+                <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag ok">XDNA NPU</span><span class="tag">CPU</span></div></td>
+                <td><code>/v1/audio/speech</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code></td>
+              </tr>
+              <tr>
+                <td><b>ollama's llama-server</b><br><small>/usr/local/lib/ollama</small></td>
+                <td>Models upstream llama.cpp does not load yet; embedded vision towers</td>
+                <td>Custom, with <code>libraryPaths</code></td>
+                <td><div class="tags"><span class="tag sun">ROCm</span><span class="tag ind">Vulkan</span><span class="tag">CUDA</span></div></td>
+                <td>Same as llama.cpp</td>
+              </tr>
+              <tr>
+                <td><b>ds4</b> &amp; any server<br><small>antirez/ds4 preset</small></td>
+                <td>Whatever it serves over an OpenAI-style API</td>
+                <td>Custom — <strong>Add engine</strong> in the UI</td>
+                <td><div class="tags"><span class="tag">your build</span></div></td>
+                <td>Same as llama.cpp</td>
+              </tr>
+              <tr>
+                <td><b>ComfyUI</b><br><small>your install</small></td>
+                <td>Image, video and 3D models that only exist as workflows</td>
+                <td>Bridged, not managed — see <a href="#comfyui">ComfyUI bridge</a></td>
+                <td><div class="tags"><span class="tag">whatever it runs on</span></div></td>
+                <td><code>/v1/images/*</code> <code>/v1/videos</code> <code>/v1/3d/generations</code></td>
+              </tr>
+              <tr>
+                <td><b>Remote providers</b><br><small>proxies</small></td>
+                <td>DeepSeek, OpenAI, Gemini, Claude under local names</td>
+                <td><code>"type": "openai"</code> or <code>"anthropic"</code>, base URL and key</td>
+                <td><div class="tags"><span class="tag">cloud</span></div></td>
+                <td>All three dialects, translated</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="versions">Versions and variants</h3>
+        <p>Managed engines install under <code>binary/&lt;engine&gt;/&lt;version&gt;/&lt;variant&gt;/</code>, and installing a new release never removes an old one. <code>trackedVariants</code> decides which of a release's many platform builds the release browser offers — by default <code>ubuntu-vulkan-x64</code> and <code>ubuntu-rocm</code> for llama.cpp, <code>x86_64-vulkan</code> and <code>x86_64-rocm</code> for stable-diffusion.cpp.</p>
+        <p>Each model chooses its build:</p>
+        <div class="term">
+          <div class="bar"><span>hemera.json — models</span><button class="copy" type="button">Copy</button></div>
+<pre>{ "name": "qwen3-coder",
+  "engine": "llama.cpp",
+  "engineVersion": "latest",        <span class="c">// or a pinned tag such as "b10254" to roll back</span>
+  "engineVariant": "rocm",          <span class="c">// substring of an installed variant</span>
+  "file": "/models/Qwen3-Coder-Q4_K_M.gguf",
+  "args": ["-c", "32768"] }</pre>
+        </div>
+        <p>Each build runs with its own folder on <code>LD_LIBRARY_PATH</code>, so ROCm, Vulkan and CPU builds coexist without interfering.</p>
+
+        <h3 id="custom">Custom engines</h3>
+        <p>An engine with a <code>binaryPath</code> runs a binary you installed yourself — <strong>Add engine</strong> in the Engines tab, with a preset for <a href="https://github.com/antirez/ds4">ds4</a>. <code>{port}</code>, <code>{file}</code> and <code>{mmproj}</code> in its arguments are filled in at launch. A binary whose name contains <code>llama-server</code> is driven llama.cpp-style (<code>-m</code> and <code>--mmproj</code> supplied automatically), <code>whisper-server</code> whisper-style; <code>argStyle</code> overrides the guess.</p>
+        <div class="term">
+          <div class="bar"><span>hemera.json — engines</span><button class="copy" type="button">Copy</button></div>
+<pre>"ds4": {
+  "binaryPath": "/opt/ds4/ds4",
+  "healthPath": "/health",
+  "defaultArgs": ["serve", "--port", "{port}", "--model", "{file}"]
+},
+"ollama-runner": {
+  "binaryPath": "/usr/local/lib/ollama/llama-server",
+  "healthPath": "/health",
+  "defaultArgs": ["--no-webui", "--offline", "-np", "1"],
+  "libraryPaths": ["/usr/local/lib/ollama", "/usr/local/lib/ollama/rocm_v7_2"]
+}</pre>
+        </div>
+        <p><b>Ollama's own runner</b> is worth registering: models pulled with <code>ollama pull</code> sometimes carry metadata upstream llama.cpp rejects, and models whose vision tower is inside the model file need it. For such a model, set <code>file</code> and <code>mmproj</code> to the same path. Ollama's GPU backends are plugins (<code>libggml-hip.so</code>, <code>libggml-vulkan.so</code>…) that ggml loads itself; hemera finds the one in your <code>libraryPaths</code> and sets <code>GGML_BACKEND_PATH</code>, as ollama's launcher does — without it the runner quietly uses the CPU.</p>
+
+        <h3 id="gpu">GPU runtimes</h3>
+        <p>A ROCm or CUDA build needs vendor libraries that are usually not on the loader path, and when they are missing the engine does not fail — it runs on CPU at a fraction of the speed. Before launching, hemera reads the ELF headers of the build's binaries, finds the libraries the system cannot already resolve, and searches the usual runtime locations for them (ROCm, CUDA, oneAPI/SYCL, OpenVINO; versioned and symlinked layouts matched by glob). What it finds goes on that process's <code>LD_LIBRARY_PATH</code>; what it cannot find is logged and shown in the Engines tab:</p>
+        <div class="term">
+          <div class="bar"><span>journalctl -u hemera</span></div>
+<pre>INFO  [instance] Runtime libraries for 'qwen3-coder' found in /opt/rocm/lib
+WARN  [instance] 'qwen3-coder' may fall back to CPU: 3 libraries not found
+                 (libamdhip64.so.7, librocblas.so.5, libhipblas.so.3) ...</pre>
+        </div>
+        <p>For an unusual location add a glob to <code>librarySearchRoots</code> (global) or a folder to an engine's <code>libraryPaths</code> (searched first); <code>"libraryAutoDetect": false</code> turns the search off. No root is needed and nothing is written outside <code>hemera.json</code>.</p>
+      </section>
+
+      <!-- ======================= MODELS ======================= -->
+      <section id="models">
+        <h2>Models</h2>
+        <ul>
+          <li><b>One file, many names.</b> Configure a GGUF as several models, each with its own arguments, environment, engine version and variant — a short-context ROCm one and a long-context Vulkan one, say.</li>
+          <li><b>Vision projectors</b> are paired with the model they shipped with: one in the model's own folder, or the projector layer of an ollama manifest. A model with its vision or audio tower embedded in the file is detected and labelled.</li>
+          <li><b>Speculative decoding.</b> An MTP head — in the file itself or as a separate draft GGUF beside it — is detected and <code>--spec-type draft-mtp</code> suggested; the draft is bound through <code>extraFiles</code>.</li>
+          <li><b>Image models</b> for stable-diffusion.cpp are recognised by their tensor names, and the VAE and text encoder beside them in <code>vae/</code> and <code>text_encoders/</code> are filled in.</li>
+          <li><b>Keep-alive.</b> An idle model unloads after <code>keepAliveSeconds</code> (default 300), globally or per model. A model answering a request is never unloaded.</li>
+          <li><b>Memory guard.</b> Before a model starts, hemera estimates what it needs — its files plus 2 GB for a language model or 8 GB for an image model, or the model's own <code>memoryMB</code> — and unloads the longest-idle models, then an idle ComfyUI's cache, until it fits with <code>memoryReserveMB</code> (default 2048) to spare.</li>
+        </ul>
+      </section>
+
+      <!-- ======================= COMFYUI ======================= -->
+      <section id="comfyui">
+        <h2>ComfyUI bridge</h2>
+        <p class="section-lede">Some models only run as a ComfyUI workflow — the 3D ones, and video models newer than stable-diffusion.cpp supports. Hemera fronts ComfyUI over the same HTTP API ComfyUI's own page uses: nothing is installed into it and none of its files are touched.</p>
+
+        <h3 id="comfy-setup">Setup</h3>
+        <ol class="steps-list">
+          <li><b>Have a working ComfyUI</b> with the custom nodes and model files the families you want need (TRELLIS.2, Hunyuan3D 2.1, LTX-2.5…). Check one workflow runs in ComfyUI's own page first.</li>
+          <li><b>Tell hemera where it is</b> — in the Directories tab, or in <code>hemera.json</code>. With <code>dir</code>, hemera starts ComfyUI when needed (with <code>--listen</code> and <code>--port</code> from <code>url</code>) and can restart or stop it; with only <code>url</code>, it uses a ComfyUI that runs elsewhere.</li>
+          <li><b>Check what it found.</b> The Directories tab lists the models it offers, the files it did not recognise, and what is missing for the rest. Within half a minute they appear in <code>/v1/models</code>.</li>
+        </ol>
+        <div class="term">
+          <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
+<pre>"comfyui": {
+  "dir": "/opt/ComfyUI",            <span class="c">// the folder with main.py</span>
+  "url": "http://127.0.0.1:8188"    <span class="c">// optional with dir; alone for a remote ComfyUI</span>
+}</pre>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Key</th><th>Default</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>python</code></td><td><code>venv/</code> or <code>.venv/</code></td><td>Interpreter, when ComfyUI's virtualenv is not in or beside its folder.</td></tr>
+              <tr><td><code>args</code>, <code>env</code></td><td>—</td><td>Extra arguments for <code>main.py</code>, and environment variables.</td></tr>
+              <tr><td><code>autoStart</code></td><td><code>true</code></td><td>Start with hemera rather than at the first request.</td></tr>
+              <tr><td><code>keepAliveSeconds</code></td><td><code>300</code></td><td>Idle time after which ComfyUI is asked to unload its models; <code>-1</code> never.</td></tr>
+              <tr><td><code>memoryMB</code></td><td><code>24576</code></td><td>What a job needs when its recipe does not say.</td></tr>
+              <tr><td><code>stallSeconds</code></td><td>900 image, 1800 video/3D</td><td>Silence after which a job counts as hung.</td></tr>
+              <tr><td><code>cancelSeconds</code></td><td><code>15</code></td><td>How long a cancelled job may keep running before ComfyUI is killed to free the GPU.</td></tr>
+              <tr><td><code>exclusiveGpu</code></td><td><code>false</code></td><td>Unload every other engine before a ComfyUI job, and stop an idle ComfyUI before another engine loads.</td></tr>
+              <tr><td><code>assign</code></td><td><code>{}</code></td><td>File name → recipe id, for checkpoints no pattern recognises.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Image models then answer <code>/v1/images/generations</code> (and <code>/v1/images/edits</code> when the recipe has an image setting), video models <code>/v1/videos</code>, 3D models <a href="#three"><code>/v1/3d/generations</code></a>. Results are written to <code>output/hemera/</code> and uploads to <code>input/hemera/</code> inside ComfyUI; hemera never deletes there, so clear them out now and then.</p>
+
+        <h3 id="recipes">Recipes</h3>
+        <p>A recipe turns files into a model: a small JSON document naming the files a family needs (by pattern, per ComfyUI folder), the request parameters and where each lands in the workflow, the workflow itself in ComfyUI's API format, and optionally <code>memoryMB</code>. Built-ins cover TRELLIS.2, Pixal3D, Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain and turbo-merged), Qwen-Image and Qwen-Image 2.1 Turbo. A model is offered only when ComfyUI has every file and node its recipe needs.</p>
+        <ol class="steps-list">
+          <li>In ComfyUI, build or open the workflow and export it with <b>Save (API Format)</b>.</li>
+          <li>In hemera's Directories tab, under <i>Recipes</i>, press <b>New recipe</b> and give it the file. Hemera reads it against what ComfyUI says about each node and drafts the recipe: which inputs choose model files (and a pattern that also catches the bf16 and int8 of the same family), which take prompt, seed, steps, size or image, and which node saves the result.</li>
+          <li>Review the form: the live check shows what each file pattern matches right now; settings carry names, defaults and ranges taken from ComfyUI. Any other input of any node can be added as a setting. <i>Edit as JSON</i> is there for the odd thing a form cannot say.</li>
+          <li>Save. Hemera checks the recipe parses and its output exists, and warns about nodes ComfyUI lacks.</li>
+        </ol>
+        <p>A built-in you edit is stored as your own version — <b>Revert</b> brings the original back, <b>Switch off</b> hides it. Recipes are plain files in <code>&lt;home&gt;/comfyui/&lt;id&gt;.json</code>, and the same actions are available over HTTP: <code>GET /hemera/api/comfyui/recipes</code>, <code>PUT</code>/<code>DELETE …/recipes/{id}</code>, <code>POST …/recipes/draft</code> and <code>POST …/recipes/check</code>.</p>
+
+        <h3 id="comfy-memory">Memory and recovery</h3>
+        <ul>
+          <li><b>Room per job.</b> Before a job, hemera unloads idle models until the recipe's <code>memoryMB</code> fits. ComfyUI cannot judge this itself: the free memory it reads from ROCm leaves out what the Vulkan engines hold. Built-in figures, measured on 128 GB: MiniMax turbo 75 GB, MiniMax and LTX-2.5 80 GB, Qwen-Image 60 GB, Pixal3D 40 GB, the rest within the 24 GB default.</li>
+          <li><b>Hung jobs.</b> A healthy job reports every sampling step; one silent for <code>stallSeconds</code> is taken as hung, ComfyUI is restarted and the job run once more, then <code>504</code>. Each job logs its longest quiet spell — <code>journalctl -u hemera | grep "quiet spell"</code> — which is the number to set the limit from.</li>
+          <li><b>Engines changing.</b> If any engine started or stopped since ComfyUI's last job, hemera restarts ComfyUI before the next one (about 7 s), because a running ROCm ComfyUI has hung after a Vulkan engine loaded beside it.</li>
+          <li><b>Controls.</b> Start, Restart and Stop in the Directories tab, with the exit code and last output when ComfyUI dies; or <code>POST /hemera/api/comfyui/control</code> with <code>{"action": "start|restart|stop"}</code>.</li>
+        </ul>
+      </section>
+
+      <!-- ======================= SPEECH ======================= -->
+      <section id="speech">
+        <h2>Speech</h2>
+        <p class="section-lede">Speech recognition runs on whisper.cpp, speech synthesis, diarization and voice conversion on audio.cpp. Both are custom engines you build yourself.</p>
+        <h3>Recognition — whisper.cpp</h3>
+        <p>whisper.cpp publishes GPU builds only for Windows, so on Linux build it with <code>cmake -DGGML_VULKAN=ON</code> and point an engine at <code>build/bin/whisper-server</code>. Hemera starts it with <code>-l auto</code> (language detected) and, when ffmpeg is present, <code>--convert</code> (WebM, Ogg, M4A accepted). Turbo models only transcribe; <code>/v1/audio/translations</code> refuses them unless the model sets <code>"translates": true</code>. <code>/v1/realtime</code> is OpenAI's Realtime transcription session over WebSocket.</p>
+        <h3>Synthesis — audio.cpp</h3>
+        <p><a href="https://github.com/0xShug0/audio.cpp">audio.cpp</a> reads its models from a config file, which hemera writes per model. A model names its audio.cpp <code>family</code> and <code>"mode": "streaming"</code> when the family streams. audio.cpp defaults to CUDA, hence <code>--backend</code>. Its NPU build for Ryzen AI chips can run the same voice: set it up as a second engine and model, and clients choose by name.</p>
+        <div class="term">
+          <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
+<pre>"engines": {
+  "whisper.cpp":   { "binaryPath": "/opt/whisper.cpp/build/bin/whisper-server" },
+  "audio.cpp":     { "binaryPath": "/opt/audio.cpp/build/audiocpp_server",
+                     "defaultArgs": ["--backend", "vulkan"] },
+  "audio.cpp-npu": { "binaryPath": "/opt/audio.cpp/build-npu/audiocpp_server",
+                     "argStyle": "audiocpp", "healthPath": "/health",
+                     "defaultArgs": ["--backend", "npu", "--threads", "2"] }
+},
+"voicesDir": "/opt/hemera/voices",
+"models": [
+  { "name": "whisper-large-v3-turbo", "engine": "whisper.cpp",
+    "file": "/models/ggml-large-v3-turbo-q8_0.bin" },
+  { "name": "voxcpm2", "engine": "audio.cpp", "family": "voxcpm2",
+    "mode": "streaming", "file": "/models/voxcpm2-q8_0.gguf" },
+  { "name": "voxcpm2-npu", "engine": "audio.cpp-npu", "family": "voxcpm2",
+    "mode": "streaming", "file": "/models/voxcpm2-q8_0.gguf" }
+]</pre>
+        </div>
+        <ul>
+          <li><b>Voice library.</b> <code>/v1/audio/voices</code> (and the Voices tab) takes a recording, its transcript — written by the recogniser when left out — and a consent note; any speech model can then speak in that voice by name.</li>
+          <li><b>LLMs wait for GPU speech.</b> On one GPU an LLM crowds speech down to 0.5× realtime, so hemera freezes its llama.cpp engines for the few seconds a <code>/v1/audio/speech</code> request takes (2.4× realtime then). Speech on <code>--backend npu</code> or <code>cpu</code> freezes nothing. <code>speechPauseMaxSeconds</code> (120) bounds a freeze; <code>"speechPausesLlm": false</code> turns it off.</li>
+          <li><b>Live work first.</b> Requests marked <code>X-Hemera-Priority: background</code> wait while a realtime transcription, voice changer or streamed speech is running.</li>
+          <li><b>Who said what.</b> <code>response_format=diarized_json</code> uses an audio.cpp diarization model (<code>"task": "diar"</code>), then transcribes each speaker's turn on its own.</li>
+        </ul>
+      </section>
+
+      <!-- ======================= 3D ======================= -->
+      <section id="three">
+        <h2>3D API</h2>
+        <p class="section-lede">OpenAI defines no 3D endpoint, so this one is hemera's own. It mirrors the Videos API — same job lifecycle, same status values — so one piece of client code can drive both.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Call</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>POST /v1/3d/generations</code></td><td>Start a job. JSON, or <code>multipart/form-data</code> with the image as a file.</td></tr>
+              <tr><td><code>GET /v1/3d/generations/{id}</code></td><td>Status and progress.</td></tr>
+              <tr><td><code>GET /v1/3d/generations/{id}/content</code></td><td>The mesh, <code>model/gltf-binary</code> (<code>.glb</code>); <code>409</code> until completed. Supports <code>HEAD</code>.</td></tr>
+              <tr><td><code>DELETE /v1/3d/generations/{id}</code></td><td>Cancel a running job, or forget a finished one.</td></tr>
+              <tr><td><code>GET /v1/3d/generations</code></td><td>Every job hemera still remembers, newest first.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="term">
+          <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
+<pre><span class="c"># multipart</span>
+curl http://host:12434/v1/3d/generations -F model=trellis_2_int8_convrot \
+  -F image=@teapot.png -F texture=vertex          <span class="c"># -> {"id":"3d_…","status":"queued"}</span>
+
+<span class="c"># JSON</span>
+curl http://host:12434/v1/3d/generations -H 'Content-Type: application/json' -d '{
+  "model": "pixal3d_int8_convrot", "image": "data:image/png;base64,iVBORw0...", "texture": "pbr" }'
+
+curl http://host:12434/v1/3d/generations/3d_…            <span class="c"># queued | in_progress | completed</span>
+curl http://host:12434/v1/3d/generations/3d_…/content -o teapot.glb</pre>
+        </div>
+        <p><code>model</code> and <code>image</code> are required; everything else comes from the model's <code>parameters</code> in <code>/v1/models</code>.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Field</th><th>Models</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>image</code></td><td>all</td><td>One whole object, ideally on a plain background.</td></tr>
+              <tr><td><code>texture</code></td><td>TRELLIS.2, Pixal3D</td><td><code>vertex</code> (default) — colour per vertex, minutes. <code>pbr</code> — UV-unwrapped with base colour, metallic, roughness, normal and occlusion maps, tens of minutes. <code>none</code> — geometry only.</td></tr>
+              <tr><td><code>faces</code></td><td>TRELLIS.2, Pixal3D</td><td>Triangle budget; default 700000 for <code>vertex</code>, 200000 for <code>pbr</code>.</td></tr>
+              <tr><td><code>texture_size</code></td><td>TRELLIS.2, Pixal3D</td><td>PBR map side, 512–4096, default 2048.</td></tr>
+              <tr><td><code>remove_background</code></td><td>TRELLIS.2, Pixal3D</td><td>Default <code>true</code>; send <code>false</code> for an image already cut out.</td></tr>
+              <tr><td><code>steps</code>, <code>cfg_scale</code>, <code>resolution</code></td><td>Hunyuan3D 2.1</td><td>Sampling steps, guidance, surface resolution (128–512). Geometry without colour.</td></tr>
+              <tr><td><code>seed</code></td><td>all</td><td>Reproducibility.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="term">
+          <div class="bar"><span>the job object</span></div>
+<pre>{ "id": "3d_8c3cc8d0de436", "object": "3d.generation", "model": "hunyuan_3d_v2.1",
+  "status": "completed", "progress": 100,
+  "created_at": 1791656870, "completed_at": 1791657032,
+  "parameters": { "steps": 30, "cfg_scale": 5, "resolution": 256, "seed": 7 },
+  "output": { "format": "glb", "content_type": "model/gltf-binary",
+              "url": "/v1/3d/generations/3d_8c3cc8d0de436/content" } }</pre>
+        </div>
+        <ul>
+          <li><code>status</code>: <code>queued</code> → <code>in_progress</code> → <code>completed</code> | <code>failed</code> | <code>cancelled</code>; <code>error</code> (<code>{"code","message"}</code>) on failure.</li>
+          <li><code>progress</code> 0–100 moves unevenly — show it as a bar, do not compute a time left from it.</li>
+          <li><code>parameters</code> are the values actually used, the drawn seed included: store them with the mesh.</li>
+          <li>Meshes are 10–100 MB. Hemera remembers finished jobs for a day (64 at most) and forgets them on restart — <b>download the mesh when the job completes</b>.</li>
+          <li>Typical times on the reference machine: Hunyuan3D 2–3 min; TRELLIS.2 / Pixal3D with vertex colours 5–10 min, with <code>pbr</code> 20–40 min.</li>
+        </ul>
+      </section>
+
+      <!-- ======================= API ======================= -->
+      <section id="api">
+        <h2>API surface</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Dialect</th><th>Endpoints</th></tr></thead>
+            <tbody>
+              <tr><td><b>Ollama</b></td><td><code>/api/tags</code> <code>/api/ps</code> <code>/api/show</code> <code>/api/chat</code> <code>/api/generate</code> <code>/api/embed</code> <code>/api/delete</code> <code>/api/stop</code> <code>/api/version</code></td></tr>
+              <tr><td><b>OpenAI</b></td><td><code>/v1/models</code> <code>/v1/chat/completions</code> <code>/v1/completions</code> <code>/v1/embeddings</code> <code>/v1/images/generations</code> <code>/v1/images/edits</code> <code>/v1/videos</code> <code>/v1/audio/transcriptions</code> <code>/v1/audio/translations</code> <code>/v1/audio/speech</code> <code>/v1/realtime</code></td></tr>
+              <tr><td><b>Anthropic</b></td><td><code>/v1/messages</code> <code>/v1/messages/count_tokens</code></td></tr>
+              <tr><td><b>hemera</b></td><td><code>/v1/3d/generations</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code> (WebSocket); admin under <code>/hemera/api/…</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><b>Discovery.</b> Neither OpenAI's nor Ollama's model list says what a model is for, so hemera adds it in each dialect's own style. <code>/v1/models</code> entries carry a <code>hemera</code> object — <code>kind</code> (<code>text</code>, <code>image</code>, <code>video</code>, <code>3d</code>, <code>transcription</code>, <code>speech</code>, <code>voice-changer</code>, <code>diarization</code>), the <code>endpoint</code> to call, and for ComfyUI models their <code>parameters</code> with types and ranges. <code>/api/tags</code> and <code>/api/show</code> add <code>image</code>, <code>video</code>, <code>3d</code>, <code>transcription</code> and <code>speech</code> to Ollama's <code>capabilities</code>. Asking a model for the wrong thing is answered with the endpoint that would have worked.</p>
+        <p><b>Cancelling images.</b> Send <code>"stream": true</code> and close the stream, or name the request with <code>X-Hemera-Request-Id</code> and <code>POST /hemera/api/images/cancel</code> with <code>{"id": "…"}</code>. Videos and 3D jobs cancel with <code>DELETE</code>.</p>
+        <p>The full contract for client authors — every field, the job objects, a client loop for video and 3D — is <a href="https://github.com/peprasetya/hemera/blob/main/docs/media-api.md">docs/media-api.md</a>.</p>
+      </section>
+
+      <!-- ======================= CONFIG ======================= -->
+      <section id="config">
+        <h2>Configuration</h2>
+        <p>Everything is one JSON document, <code>hemera.json</code> in hemera's home, editable in the web UI or by hand. The essentials:</p>
+        <div class="term">
+          <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
+<pre>{
+  "port": 12434,
+  "logLevel": "info",               <span class="c">// info | debug | trace</span>
+  "keepAliveSeconds": 300,
+  "loadTimeoutSeconds": 600,
+  "memoryReserveMB": 2048,
+  "modelDirs": ["/srv/models/gguf", "/usr/share/ollama/.ollama/models"],
+  "librarySearchRoots": [],
+  "comfyui": { "dir": "/opt/ComfyUI" },
+  "engines": {
+    "llama.cpp": {
+      "repo": "ggml-org/llama.cpp",
+      "serverBin": "llama-server",
+      "trackedVariants": ["ubuntu-rocm", "ubuntu-vulkan-x64"],
+      "defaultArgs": ["--no-webui"]
+    },
+    "sd.cpp": {
+      "repo": "leejet/stable-diffusion.cpp",
+      "serverBin": "sd-server",
+      "trackedVariants": ["x86_64-vulkan", "x86_64-rocm"]
+    }
+  },
+  "models": [
+    { "name": "qwen3-coder", "engine": "llama.cpp", "engineVersion": "latest",
+      "engineVariant": "rocm", "file": "/models/Qwen3-Coder-Q4_K_M.gguf",
+      "args": ["-c", "32768", "-ngl", "99", "--jinja"],
+      "env": { "HSA_OVERRIDE_GFX_VERSION": "11.5.1" } }
+  ],
+  "proxies": [
+    { "name": "deepseek-chat", "type": "openai", "baseUrl": "https://api.deepseek.com/v1",
+      "apiKey": "sk-…", "upstreamModel": "deepseek-chat" }
+  ]
+}</pre>
+        </div>
+        <p>The README's <a href="https://github.com/peprasetya/hemera#configuration">Configuration</a> section annotates every key.</p>
+        <div class="doc-next">
+          <a href="https://github.com/peprasetya/hemera/blob/main/docs/media-api.md"><small>Client contract</small>docs/media-api.md →</a>
+          <a href="https://github.com/peprasetya/hemera#readme"><small>Everything, with measurements</small>README on GitHub →</a>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>© <span id="year">2026</span> aether.ing — hemera, the engine room for local AI</div>
+    <nav>
+      <a href="../">Hemera</a>
+      <a href="https://github.com/peprasetya/hemera">GitHub</a>
+      <a href="https://github.com/peprasetya/hemera/releases">Releases</a>
+      <a href="https://aether.ing/">aether.ing</a>
+      <a href="../../privacy.html">Privacy Policy</a>
+      <a href="../../tos.html">Terms of Service</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+  (function ()
+  {
+    var buttons = document.querySelectorAll('.copy');
+    for (var i = 0; i < buttons.length; i++)
+    {
+      buttons[i].addEventListener('click', function ()
+      {
+        var btn = this;
+        var text = btn.closest('.term').querySelector('pre').innerText;
+        var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+        if (navigator.clipboard && window.isSecureContext)
+          navigator.clipboard.writeText(text).then(done, function () {});
+        else
+        {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); done(); } catch (e) {}
+          document.body.removeChild(ta);
+        }
+      });
+    }
+  })();
+  (function ()
+  {
+    var links = document.querySelectorAll('.toc a');
+    var map = {};
+    var targets = [];
+    for (var i = 0; i < links.length; i++)
+    {
+      var id = links[i].getAttribute('href').slice(1);
+      var el = document.getElementById(id);
+      if (!el) continue;
+      map[id] = links[i];
+      targets.push(el);
+    }
+    if (!('IntersectionObserver' in window)) return;
+    var visible = {};
+    var io = new IntersectionObserver(function (entries)
+    {
+      entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+      var current = null;
+      for (var j = 0; j < targets.length; j++)
+        if (visible[targets[j].id]) { current = targets[j].id; break; }
+      if (!current) return;
+      for (var k in map) map[k].classList.toggle('on', k === current);
+    }, { rootMargin: '-80px 0px -65% 0px' });
+    targets.forEach(function (t) { io.observe(t); });
+  })();
+</script>
+</body>
+</html>

@@ -11,1325 +11,21 @@
   <meta property="og:image" content="https://aether.ing/aether.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='13' fill='%23f5b14c'/%3E%3Cg stroke='%23f5b14c' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="apple-touch-icon" href="../aether.png">
-  <style>
-    :root
-    {
-      --bg: #0b0e14;
-      --bg-2: #0f1320;
-      --panel: #121826;
-      --panel-2: #161d2e;
-      --text: #e6e8ef;
-      --muted: #9aa3b5;
-      --faint: #6b7489;
-      --accent: #6366f1;
-      --accent-2: #8b5cf6;
-      --accent-soft: rgba(99, 102, 241, 0.14);
-      --sun: #f5b14c;
-      --sun-2: #f08a3c;
-      --sun-soft: rgba(245, 177, 76, 0.13);
-      --ok: #34d399;
-      --border: #1f2737;
-      --border-2: #2a3347;
-      --shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.6);
-      --radius: 16px;
-      --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-    }
-    @media (prefers-color-scheme: light)
-    {
-      :root
-      {
-        --bg: #f7f8fc;
-        --bg-2: #eef0f8;
-        --panel: #ffffff;
-        --panel-2: #f3f4fa;
-        --text: #141826;
-        --muted: #4f586c;
-        --faint: #7d8599;
-        --accent: #5153e0;
-        --accent-2: #7c4ee4;
-        --accent-soft: rgba(81, 83, 224, 0.1);
-        --sun: #c47a0c;
-        --sun-2: #c2561a;
-        --sun-soft: rgba(196, 122, 12, 0.1);
-        --ok: #059669;
-        --border: #e2e5ef;
-        --border-2: #d3d7e4;
-        --shadow: 0 30px 70px -25px rgba(30, 35, 70, 0.28);
-      }
-    }
-    *
-    {
-      box-sizing: border-box;
-    }
-    html
-    {
-      scroll-behavior: smooth;
-      scroll-padding-top: 76px;
-    }
-    body
-    {
-      margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
-    }
-    a
-    {
-      color: inherit;
-    }
-    code
-    {
-      font-family: var(--mono);
-      font-size: 0.86em;
-      padding: 1px 6px;
-      border-radius: 6px;
-      background: var(--bg-2);
-      border: 1px solid var(--border);
-      overflow-wrap: anywhere;
-    }
-    .wrap
-    {
-      max-width: 1160px;
-      margin: 0 auto;
-      padding: 0 20px;
-    }
-
-    /* ---------- nav ---------- */
-    .nav
-    {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      backdrop-filter: saturate(160%) blur(14px);
-      -webkit-backdrop-filter: saturate(160%) blur(14px);
-      background: color-mix(in srgb, var(--bg) 72%, transparent);
-      border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-    }
-    .nav .wrap
-    {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 64px;
-      gap: 16px;
-    }
-    .brand
-    {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 1.08rem;
-      text-decoration: none;
-      letter-spacing: -0.01em;
-      white-space: nowrap;
-    }
-    .brand svg
-    {
-      width: 30px;
-      height: 30px;
-      color: var(--sun);
-      flex: none;
-    }
-    .brand strong
-    {
-      font-weight: 650;
-    }
-    .brand small
-    {
-      color: var(--faint);
-      font-size: 0.8rem;
-      margin-left: 2px;
-    }
-    .nav-links
-    {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      font-size: 0.93rem;
-    }
-    .nav-links a
-    {
-      text-decoration: none;
-      color: var(--muted);
-      transition: color 0.15s;
-    }
-    .nav-links a:hover
-    {
-      color: var(--text);
-    }
-    .btn
-    {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 18px;
-      border-radius: 999px;
-      font-weight: 600;
-      font-size: 0.95rem;
-      text-decoration: none;
-      border: 1px solid transparent;
-      transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
-      white-space: nowrap;
-    }
-    .btn:hover
-    {
-      transform: translateY(-1px);
-    }
-    .btn-sun
-    {
-      background: linear-gradient(135deg, var(--sun), var(--sun-2));
-      color: #1b1305 !important;
-      box-shadow: 0 8px 26px -10px var(--sun);
-    }
-    .btn-ghost
-    {
-      border-color: var(--border-2);
-      color: var(--text);
-      background: var(--panel);
-    }
-    .nav .btn
-    {
-      padding: 8px 15px;
-      font-size: 0.88rem;
-    }
-
-    /* ---------- hero ---------- */
-    .hero
-    {
-      position: relative;
-      padding: 88px 0 40px;
-      text-align: center;
-    }
-    .hero::before
-    {
-      content: "";
-      position: absolute;
-      inset: -120px 0 auto 0;
-      height: 720px;
-      background:
-        radial-gradient(600px 340px at 50% 18%, color-mix(in srgb, var(--sun) 26%, transparent), transparent 70%),
-        radial-gradient(420px 260px at 80% 42%, color-mix(in srgb, var(--accent-2) 16%, transparent), transparent 70%),
-        radial-gradient(380px 240px at 18% 50%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%);
-      pointer-events: none;
-      z-index: -1;
-    }
-    .hero::after
-    {
-      content: "";
-      position: absolute;
-      inset: -64px 0 auto 0;
-      height: 640px;
-      background-image:
-        linear-gradient(var(--border) 1px, transparent 1px),
-        linear-gradient(90deg, var(--border) 1px, transparent 1px);
-      background-size: 48px 48px;
-      mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, #000 20%, transparent 75%);
-      -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, #000 20%, transparent 75%);
-      opacity: 0.55;
-      pointer-events: none;
-      z-index: -2;
-    }
-    .pill
-    {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px 6px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--border-2);
-      background: color-mix(in srgb, var(--panel) 80%, transparent);
-      color: var(--muted);
-      font-size: 0.85rem;
-      text-decoration: none;
-      max-width: 100%;
-    }
-    .pill b
-    {
-      background: var(--sun-soft);
-      color: var(--sun);
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-weight: 600;
-      font-size: 0.75rem;
-      letter-spacing: 0.02em;
-      flex: none;
-    }
-    .hero h1
-    {
-      font-size: clamp(2.4rem, 6.2vw, 4.4rem);
-      line-height: 1.04;
-      letter-spacing: -0.035em;
-      font-weight: 720;
-      margin: 26px auto 22px;
-      max-width: 920px;
-    }
-    .grad
-    {
-      background: linear-gradient(100deg, var(--sun) 5%, var(--sun-2) 45%, var(--accent-2) 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
-    .hero .lede
-    {
-      max-width: 720px;
-      margin: 0 auto;
-      color: var(--muted);
-      font-size: clamp(1.02rem, 2vw, 1.2rem);
-    }
-    .cta
-    {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 12px;
-      margin: 34px 0 18px;
-    }
-    .cta .btn
-    {
-      padding: 13px 24px;
-      font-size: 1rem;
-    }
-    .fine
-    {
-      color: var(--faint);
-      font-size: 0.85rem;
-    }
-
-    /* ---------- router diagram ---------- */
-    .stage
-    {
-      margin: 56px auto 0;
-      max-width: 1080px;
-    }
-    .window
-    {
-      border-radius: 14px;
-      border: 1px solid var(--border-2);
-      background: var(--panel);
-      box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--sun) 12%, transparent);
-      overflow: hidden;
-      text-align: left;
-      font-size: 0.8rem;
-    }
-    .titlebar
-    {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
-      background: var(--panel-2);
-    }
-    .dot
-    {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-      background: var(--border-2);
-      flex: none;
-    }
-    .url
-    {
-      flex: 1;
-      margin: 0 40px;
-      text-align: center;
-      color: var(--faint);
-      font-family: var(--mono);
-      font-size: 0.74rem;
-      background: var(--bg-2);
-      border-radius: 7px;
-      padding: 4px 10px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .flow
-    {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.3fr);
-      gap: 0;
-      padding: 26px 22px;
-      align-items: center;
-      background:
-        radial-gradient(360px 220px at 50% 50%, var(--sun-soft), transparent 70%);
-    }
-    .col
-    {
-      display: grid;
-      gap: 9px;
-      min-width: 0;
-    }
-    .col-label
-    {
-      font-size: 0.66rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--faint);
-      font-weight: 600;
-      margin-bottom: 2px;
-    }
-    .node
-    {
-      position: relative;
-      border: 1px solid var(--border);
-      background: var(--bg-2);
-      border-radius: 10px;
-      padding: 8px 11px;
-      color: var(--text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .node small
-    {
-      display: block;
-      color: var(--faint);
-      font-size: 0.7rem;
-      font-family: var(--mono);
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .clients .node::after, .engines .node::before
-    {
-      content: "";
-      position: absolute;
-      top: 50%;
-      width: 0;
-    }
-    .hub-wrap
-    {
-      display: grid;
-      place-items: center;
-      padding: 0 22px;
-      position: relative;
-    }
-    .hub-wrap::before, .hub-wrap::after
-    {
-      content: "";
-      position: absolute;
-      top: 50%;
-      height: 2px;
-      width: 22px;
-      background: linear-gradient(90deg, transparent, var(--sun));
-    }
-    .hub-wrap::before
-    {
-      left: 0;
-    }
-    .hub-wrap::after
-    {
-      right: 0;
-      background: linear-gradient(90deg, var(--sun), transparent);
-    }
-    .hub
-    {
-      width: 100%;
-      border-radius: 16px;
-      border: 1px solid color-mix(in srgb, var(--sun) 55%, var(--border));
-      background:
-        radial-gradient(240px 140px at 50% 0%, var(--sun-soft), transparent 75%),
-        var(--panel);
-      padding: 18px 16px;
-      text-align: center;
-      box-shadow: 0 0 40px -12px var(--sun);
-    }
-    .hub svg
-    {
-      width: 40px;
-      height: 40px;
-      color: var(--sun);
-    }
-    .hub b
-    {
-      display: block;
-      font-size: 1.05rem;
-      margin: 4px 0 2px;
-    }
-    .hub .port
-    {
-      font-family: var(--mono);
-      color: var(--sun);
-      font-size: 0.74rem;
-    }
-    .hub .dialects
-    {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 5px;
-      margin-top: 12px;
-    }
-    .hub .dialects span, .tag
-    {
-      font-size: 0.68rem;
-      padding: 2px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--border-2);
-      background: var(--bg-2);
-      color: var(--muted);
-    }
-    .tag.sun
-    {
-      border-color: color-mix(in srgb, var(--sun) 50%, transparent);
-      color: var(--sun);
-      background: var(--sun-soft);
-    }
-    .tag.ind
-    {
-      border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-      color: var(--accent);
-      background: var(--accent-soft);
-    }
-    .tag.ok
-    {
-      border-color: color-mix(in srgb, var(--ok) 45%, transparent);
-      color: var(--ok);
-      background: color-mix(in srgb, var(--ok) 10%, transparent);
-    }
-    .node .row
-    {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      align-items: center;
-    }
-    .node .row span:first-child
-    {
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* ---------- strip ---------- */
-    .strip
-    {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 10px 28px;
-      margin: 46px auto 0;
-      color: var(--faint);
-      font-size: 0.88rem;
-    }
-    .strip span::before
-    {
-      content: "◆";
-      color: var(--sun);
-      font-size: 0.6rem;
-      margin-right: 8px;
-      vertical-align: 2px;
-    }
-
-    /* ---------- sections ---------- */
-    section
-    {
-      padding: 96px 0;
-    }
-    .eyebrow
-    {
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
-      font-size: 0.75rem;
-      font-weight: 650;
-      color: var(--sun);
-      margin-bottom: 12px;
-    }
-    h2
-    {
-      font-size: clamp(1.8rem, 4vw, 2.75rem);
-      line-height: 1.12;
-      letter-spacing: -0.028em;
-      margin: 0 0 16px;
-      font-weight: 700;
-    }
-    h3
-    {
-      letter-spacing: -0.01em;
-    }
-    .sub
-    {
-      color: var(--muted);
-      font-size: 1.08rem;
-      max-width: 680px;
-      margin: 0;
-    }
-    .sub a, .card p a, .prose a
-    {
-      color: var(--sun);
-    }
-    .head
-    {
-      margin-bottom: 48px;
-    }
-    .head.center
-    {
-      text-align: center;
-    }
-    .head.center .sub
-    {
-      margin: 0 auto;
-    }
-    .grid
-    {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
-    }
-    .card
-    {
-      position: relative;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 26px;
-      transition: border-color 0.2s, transform 0.2s;
-      min-width: 0;
-    }
-    .card:hover
-    {
-      border-color: color-mix(in srgb, var(--sun) 45%, var(--border));
-    }
-    .card h3
-    {
-      margin: 16px 0 8px;
-      font-size: 1.08rem;
-    }
-    .card p
-    {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
-    .card p + p
-    {
-      margin-top: 10px;
-    }
-    .ico
-    {
-      width: 42px;
-      height: 42px;
-      border-radius: 11px;
-      display: grid;
-      place-items: center;
-      background: var(--sun-soft);
-      color: var(--sun);
-    }
-    .ico.ind
-    {
-      background: var(--accent-soft);
-      color: var(--accent);
-    }
-    .ico svg
-    {
-      width: 22px;
-      height: 22px;
-    }
-    .card.wide
-    {
-      grid-column: span 2;
-    }
-
-    /* ---------- origins ---------- */
-    .origins
-    {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
-    }
-    .origin
-    {
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--panel);
-      padding: 28px;
-      min-width: 0;
-    }
-    .origin.us
-    {
-      border-color: color-mix(in srgb, var(--sun) 45%, var(--border));
-      background:
-        radial-gradient(420px 220px at 100% 0%, var(--sun-soft), transparent 70%),
-        var(--panel);
-    }
-    .origin .who
-    {
-      font-size: 0.72rem;
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      font-weight: 650;
-      color: var(--faint);
-    }
-    .origin h3
-    {
-      margin: 8px 0 12px;
-      font-size: 1.2rem;
-    }
-    .origin p
-    {
-      margin: 0 0 14px;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
-    .origin ul
-    {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      display: grid;
-      gap: 8px;
-      font-size: 0.92rem;
-      color: var(--muted);
-    }
-    .origin li
-    {
-      position: relative;
-      padding-left: 22px;
-    }
-    .origin li::before
-    {
-      content: "";
-      position: absolute;
-      left: 2px;
-      top: 9px;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent);
-    }
-    .origin.us li::before
-    {
-      background: var(--sun);
-      box-shadow: 0 0 10px var(--sun);
-    }
-    .origin li b
-    {
-      color: var(--text);
-      font-weight: 600;
-    }
-    .honest
-    {
-      margin-top: 22px;
-      padding: 18px 22px;
-      border-radius: 14px;
-      border: 1px dashed var(--border-2);
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
-    .honest b
-    {
-      color: var(--text);
-    }
-
-    /* ---------- split / checks ---------- */
-    .split
-    {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 56px;
-      align-items: center;
-    }
-    .split > *
-    {
-      min-width: 0;
-    }
-    .checks
-    {
-      list-style: none;
-      padding: 0;
-      margin: 28px 0 0;
-      display: grid;
-      gap: 14px;
-    }
-    .checks li
-    {
-      position: relative;
-      padding-left: 34px;
-      color: var(--muted);
-    }
-    .checks li b
-    {
-      color: var(--text);
-      font-weight: 600;
-    }
-    .checks li::before
-    {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 20px;
-      height: 20px;
-      margin-top: 3px;
-      border-radius: 6px;
-      background: var(--sun-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23f5b14c' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 10.5l3.2 3.2L15 7'/%3E%3C/svg%3E") center / 16px no-repeat;
-    }
-
-    /* ---------- code ---------- */
-    .term
-    {
-      position: relative;
-      font-family: var(--mono);
-      font-size: 0.8rem;
-      border-radius: 14px;
-      border: 1px solid var(--border);
-      background: var(--bg-2);
-      color: var(--muted);
-      line-height: 1.75;
-      overflow: hidden;
-      min-width: 0;
-    }
-    .term .bar
-    {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 8px 12px 8px 16px;
-      border-bottom: 1px solid var(--border);
-      background: var(--panel-2);
-      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-      font-size: 0.74rem;
-      color: var(--faint);
-    }
-    .term pre
-    {
-      margin: 0;
-      padding: 16px 18px;
-      overflow-x: auto;
-      white-space: pre;
-      font-family: inherit;
-    }
-    .copy
-    {
-      font: inherit;
-      font-size: 0.72rem;
-      color: var(--muted);
-      background: var(--panel);
-      border: 1px solid var(--border-2);
-      border-radius: 7px;
-      padding: 2px 9px;
-      cursor: pointer;
-    }
-    .copy:hover
-    {
-      color: var(--text);
-    }
-    .p
-    {
-      color: var(--sun);
-      user-select: none;
-    }
-    .m
-    {
-      color: var(--text);
-    }
-    .k
-    {
-      color: var(--accent-2);
-    }
-    .s
-    {
-      color: var(--ok);
-    }
-    .c
-    {
-      color: var(--faint);
-      font-style: italic;
-    }
-    .stack-terms
-    {
-      display: grid;
-      gap: 14px;
-    }
-
-    /* ---------- engines table ---------- */
-    .table-wrap
-    {
-      overflow-x: auto;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--panel);
-    }
-    table
-    {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
-    th, td
-    {
-      text-align: left;
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: top;
-    }
-    th
-    {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--faint);
-      font-weight: 650;
-      background: var(--panel-2);
-      white-space: nowrap;
-    }
-    tr:last-child td
-    {
-      border-bottom: 0;
-    }
-    td
-    {
-      color: var(--muted);
-    }
-    td b
-    {
-      color: var(--text);
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    td code
-    {
-      white-space: nowrap;
-    }
-    td .tags
-    {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-    }
-    .engines-table
-    {
-      min-width: 860px;
-    }
-
-    /* ---------- versions tree ---------- */
-    .tree
-    {
-      font-family: var(--mono);
-      font-size: 0.8rem;
-      line-height: 1.9;
-      color: var(--muted);
-      padding: 18px 20px;
-      overflow-x: auto;
-      white-space: pre;
-    }
-    .tree .on
-    {
-      color: var(--text);
-    }
-    .tree .pin
-    {
-      color: var(--sun);
-    }
-
-    /* ---------- comfy steps ---------- */
-    .steps
-    {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      counter-reset: step;
-      margin-bottom: 40px;
-    }
-    .step
-    {
-      position: relative;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--panel);
-      padding: 22px 20px 20px;
-      min-width: 0;
-    }
-    .step::before
-    {
-      counter-increment: step;
-      content: counter(step);
-      display: grid;
-      place-items: center;
-      width: 30px;
-      height: 30px;
-      border-radius: 9px;
-      background: var(--sun-soft);
-      color: var(--sun);
-      font-weight: 700;
-      font-size: 0.9rem;
-      margin-bottom: 12px;
-    }
-    .step h3
-    {
-      margin: 0 0 6px;
-      font-size: 1rem;
-    }
-    .step p
-    {
-      margin: 0;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-    .chips
-    {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 20px;
-    }
-    .chip
-    {
-      font-size: 0.82rem;
-      padding: 6px 12px;
-      border-radius: 999px;
-      border: 1px solid var(--border-2);
-      background: var(--bg-2);
-      color: var(--muted);
-    }
-    .chip b
-    {
-      color: var(--sun);
-      font-weight: 600;
-      margin-right: 4px;
-    }
-
-    /* ---------- 3D ---------- */
-    .three
-    {
-      position: relative;
-      border-radius: 24px;
-      border: 1px solid color-mix(in srgb, var(--sun) 35%, var(--border));
-      background:
-        radial-gradient(700px 300px at 85% 0%, var(--sun-soft), transparent 70%),
-        radial-gradient(500px 300px at 0% 100%, var(--accent-soft), transparent 70%),
-        var(--panel);
-      padding: 52px;
-      overflow: hidden;
-    }
-    .three .split
-    {
-      align-items: start;
-    }
-    .mesh
-    {
-      width: 120px;
-      height: 120px;
-      color: var(--sun);
-      margin-bottom: 8px;
-      animation: float 5s ease-in-out infinite;
-    }
-    @keyframes float
-    {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-8px); }
-    }
-    .endpoints
-    {
-      display: grid;
-      gap: 8px;
-      margin: 24px 0 0;
-    }
-    .ep
-    {
-      display: grid;
-      grid-template-columns: 64px minmax(0, 1fr);
-      gap: 10px;
-      align-items: baseline;
-      font-size: 0.88rem;
-      color: var(--muted);
-    }
-    .ep .verb
-    {
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-align: center;
-      padding: 2px 0;
-      border-radius: 6px;
-      background: var(--accent-soft);
-      color: var(--accent);
-    }
-    .ep .verb.post
-    {
-      background: var(--sun-soft);
-      color: var(--sun);
-    }
-    .ep .verb.del
-    {
-      background: color-mix(in srgb, #ef4444 12%, transparent);
-      color: #ef4444;
-    }
-    .ep code
-    {
-      background: none;
-      border: 0;
-      padding: 0;
-      color: var(--text);
-      overflow-wrap: anywhere;
-    }
-
-    /* ---------- setup ---------- */
-    .setup
-    {
-      display: grid;
-      gap: 18px;
-    }
-    .setup-step
-    {
-      display: grid;
-      grid-template-columns: 300px minmax(0, 1fr);
-      gap: 28px;
-      padding: 28px;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--panel);
-    }
-    .setup-step > *
-    {
-      min-width: 0;
-    }
-    .setup-step .num
-    {
-      font-family: var(--mono);
-      color: var(--sun);
-      font-size: 0.8rem;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-    }
-    .setup-step h3
-    {
-      margin: 6px 0 8px;
-      font-size: 1.15rem;
-    }
-    .setup-step p
-    {
-      margin: 0 0 10px;
-      color: var(--muted);
-      font-size: 0.93rem;
-    }
-    .setup-step ul
-    {
-      margin: 0;
-      padding-left: 18px;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-    .setup-step li + li
-    {
-      margin-top: 4px;
-    }
-
-    /* ---------- open ---------- */
-    .stack
-    {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-    }
-    .stat
-    {
-      padding: 22px;
-      border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--panel);
-    }
-    .stat b
-    {
-      display: block;
-      font-size: 1.5rem;
-      letter-spacing: -0.02em;
-      margin-bottom: 4px;
-    }
-    .stat span
-    {
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-    .final
-    {
-      text-align: center;
-      padding: 110px 0 120px;
-      position: relative;
-    }
-    .final::before
-    {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(520px 260px at 50% 60%, color-mix(in srgb, var(--sun) 20%, transparent), transparent 70%);
-      z-index: -1;
-    }
-    footer
-    {
-      border-top: 1px solid var(--border);
-      padding: 34px 0 44px;
-      color: var(--faint);
-      font-size: 0.86rem;
-    }
-    footer .wrap
-    {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 14px 28px;
-      align-items: center;
-      justify-content: space-between;
-    }
-    footer nav
-    {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 22px;
-    }
-    footer a
-    {
-      color: var(--muted);
-      text-decoration: none;
-    }
-    footer a:hover
-    {
-      color: var(--text);
-    }
-
-    /* ---------- reveal ---------- */
-    .reveal
-    {
-      opacity: 0;
-      transform: translateY(18px);
-      transition: opacity 0.7s ease, transform 0.7s ease;
-    }
-    .reveal.in
-    {
-      opacity: 1;
-      transform: none;
-    }
-    @media (prefers-reduced-motion: reduce)
-    {
-      .reveal
-      {
-        opacity: 1;
-        transform: none;
-        transition: none;
-      }
-      .mesh
-      {
-        animation: none;
-      }
-      html
-      {
-        scroll-behavior: auto;
-      }
-    }
-
-    /* ---------- responsive ---------- */
-    @media (max-width: 980px)
-    {
-      .grid
-      {
-        grid-template-columns: 1fr 1fr;
-      }
-      .origins
-      {
-        grid-template-columns: 1fr;
-      }
-      .split
-      {
-        grid-template-columns: 1fr;
-        gap: 36px;
-      }
-      .steps, .stack
-      {
-        grid-template-columns: 1fr 1fr;
-      }
-      .setup-step
-      {
-        grid-template-columns: 1fr;
-        gap: 16px;
-      }
-      .flow
-      {
-        grid-template-columns: 1fr;
-        gap: 18px;
-      }
-      .hub-wrap
-      {
-        padding: 0;
-      }
-      .hub-wrap::before, .hub-wrap::after
-      {
-        display: none;
-      }
-      .clients
-      {
-        grid-template-columns: 1fr 1fr;
-      }
-      .clients .col-label
-      {
-        grid-column: 1 / -1;
-      }
-    }
-    @media (max-width: 680px)
-    {
-      .nav-links a.hide-sm
-      {
-        display: none;
-      }
-      .brand small
-      {
-        display: none;
-      }
-      .hero
-      {
-        padding-top: 56px;
-      }
-      .url
-      {
-        margin: 0 8px;
-      }
-      section
-      {
-        padding: 68px 0;
-      }
-      .grid, .steps, .stack
-      {
-        grid-template-columns: 1fr;
-      }
-      .card.wide
-      {
-        grid-column: auto;
-      }
-      .three
-      {
-        padding: 30px 22px;
-        border-radius: 18px;
-      }
-      .setup-step, .origin
-      {
-        padding: 22px;
-      }
-      .flow
-      {
-        padding: 18px 14px;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="style.css?v=1">
 </head>
 <body>
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="#">
-      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" aria-hidden="true">
-        <circle cx="32" cy="32" r="12" fill="currentColor"/>
-        <g stroke="currentColor" stroke-width="5" stroke-linecap="round">
-          <path d="M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7"/>
-        </g>
-      </svg>
+    <a class="brand" href="./">
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" aria-hidden="true"><circle cx="32" cy="32" r="12" fill="currentColor"/><g stroke="currentColor" stroke-width="5" stroke-linecap="round"><path d="M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7"/></g></svg>
       <span><strong>hemera</strong> <small>by aether.ing</small></span>
     </a>
     <nav class="nav-links">
       <a class="hide-sm" href="#why">Why</a>
-      <a class="hide-sm" href="#engines">Engines</a>
+      <a class="hide-sm" href="#features">Features</a>
       <a class="hide-sm" href="#comfyui">ComfyUI</a>
-      <a class="hide-sm" href="#three">3D API</a>
-      <a href="#setup">Setup</a>
+      <a class="hide-sm" href="#three">3D</a>
+      <a href="docs/">Docs</a>
       <a class="btn btn-ghost" href="https://github.com/peprasetya/hemera"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
     </nav>
   </div>
@@ -1348,7 +44,7 @@
       </p>
       <div class="cta">
         <a class="btn btn-sun" href="https://github.com/peprasetya/hemera/releases/latest/download/hemera.jar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download hemera.jar</a>
-        <a class="btn btn-ghost" href="#setup">Set it up</a>
+        <a class="btn btn-ghost" href="docs/">Read the docs</a>
       </div>
       <div class="fine">MIT licensed · one 330 KB jar · JDK 21+ · zero dependencies</div>
 
@@ -1368,7 +64,7 @@
             </div>
             <div class="hub-wrap">
               <div class="hub">
-                <svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="32" cy="32" r="12" fill="currentColor"/><g stroke="currentColor" stroke-width="5" stroke-linecap="round"><path d="M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7"/></g></svg>
+                <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" aria-hidden="true"><circle cx="32" cy="32" r="12" fill="currentColor"/><g stroke="currentColor" stroke-width="5" stroke-linecap="round"><path d="M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7"/></g></svg>
                 <b>hemera</b>
                 <span class="port">:12434</span>
                 <div class="dialects"><span>Ollama</span><span>OpenAI</span><span>Anthropic</span><span>3D</span></div>
@@ -1441,22 +137,60 @@
     </div>
   </section>
 
+  <!-- ======================= WHAT IT SERVES ======================= -->
+  <section id="features" style="padding-top:24px">
+    <div class="wrap">
+      <div class="head center reveal">
+        <div class="eyebrow">What it serves</div>
+        <h2>Not only text.</h2>
+        <p class="sub">Chat models sit next to image, video, 3D and speech models in the same list. Each one says what it makes and which endpoint to call.</p>
+      </div>
+      <div class="kinds">
+        <div class="kind reveal">
+          <div class="art art-text"><i style="width:80%"></i><i style="width:95%"></i><i style="width:60%"></i><i style="width:88%"></i></div>
+          <div class="body"><h3>Text</h3><p>Chat, tool calls, reasoning, vision input and embeddings, in three dialects.</p></div>
+        </div>
+        <div class="kind reveal">
+          <div class="art art-image"></div>
+          <div class="body"><h3>Image</h3><p>Generate, and edit with several reference images — transparent backgrounds included.</p></div>
+        </div>
+        <div class="kind reveal">
+          <div class="art art-video"></div>
+          <div class="body"><h3>Video</h3><p>Text or a first frame to a clip, as a job with real progress and cancel.</p></div>
+        </div>
+        <div class="kind reveal">
+          <div class="art art-3d"><svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><path d="M50 10 88 30v40L50 90 12 70V30z"/><path d="M12 30l38 20 38-20M50 50v40"/><path d="M31 20l38 20M69 20 31 40" opacity=".35"/></svg></div>
+          <div class="body"><h3>3D</h3><p>A picture to a <code>.glb</code> mesh, with vertex colours or full PBR textures.</p></div>
+        </div>
+        <div class="kind reveal">
+          <div class="art art-voice"><i style="height:20px;animation-delay:-.1s"></i><i style="height:40px;animation-delay:-.5s"></i><i style="height:28px;animation-delay:-.3s"></i><i style="height:52px;animation-delay:-.8s"></i><i style="height:32px;animation-delay:-.2s"></i><i style="height:44px;animation-delay:-.6s"></i><i style="height:22px;animation-delay:-.4s"></i></div>
+          <div class="body"><h3>Speech</h3><p>Text to speech in a library of voices, streamed, and live voice changing.</p></div>
+        </div>
+        <div class="kind reveal">
+          <div class="art art-ear"><i style="height:30px;animation-delay:-.3s"></i><i style="height:18px;animation-delay:-.7s"></i><i style="height:46px;animation-delay:-.1s"></i><i style="height:26px;animation-delay:-.5s"></i><i style="height:38px;animation-delay:-.9s"></i><i style="height:20px;animation-delay:-.2s"></i></div>
+          <div class="body"><h3>Listening</h3><p>Transcription, translation, live dictation, and who said what.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ======================= VERSIONS ======================= -->
   <section id="versions" style="padding-top:24px">
     <div class="wrap split">
       <div class="reveal">
         <div class="eyebrow">Versions &amp; backends</div>
         <h2>Update without fear.<br>Roll back in one click.</h2>
-        <p class="sub">Engine releases install side by side under <code>binary/&lt;engine&gt;/&lt;version&gt;/&lt;variant&gt;/</code>. Updating never removes what worked.</p>
+        <p class="sub">Engine releases install side by side. Updating never removes what worked — and every model chooses its own build and backend.</p>
         <ul class="checks">
-          <li><b>A release browser</b> in the Engines tab, filtered to the variants you track (<code>ubuntu-rocm</code>, <code>ubuntu-vulkan-x64</code>, …), with download progress and the full rollback history.</li>
-          <li><b>Pin per model:</b> <code>"engineVersion": "b10254"</code> or <code>"latest"</code>, and <code>"engineVariant": "rocm"</code>.</li>
-          <li><b>One file, many models.</b> A single GGUF becomes several names, each with its own context, offload, template, environment and engine.</li>
-          <li><b>GPU runtimes found for you.</b> Hemera reads each binary's ELF headers, finds the ROCm, CUDA, oneAPI or OpenVINO libraries it needs, and warns when a build would silently fall back to CPU.</li>
+          <li><b>A release browser</b> built in, filtered to the variants you use, with the full rollback history.</li>
+          <li><b>Pin a model</b> to the build that runs it best, or let it follow the latest.</li>
+          <li><b>One file, many models.</b> A single GGUF becomes several names, each with its own context, offload, template and engine.</li>
+          <li><b>No silent CPU fallback.</b> Hemera finds the GPU libraries each build needs and tells you when one is missing.</li>
         </ul>
+        <a class="more" href="docs/#engines">How engines and versions work →</a>
       </div>
       <div class="term reveal">
-        <div class="bar"><span>/opt/hemera/binary</span><span>hemera.json</span></div>
+        <div class="bar"><span>/opt/hemera/binary</span><span>installed side by side</span></div>
         <div class="tree"><span class="on">llama.cpp/</span>
   b10253/
     ubuntu-vulkan-x64/   <span class="pin">← qwen3-coder-long (pinned)</span>
@@ -1468,101 +202,34 @@
 <span class="on">sd.cpp/</span>
   master-…/
     x86_64-vulkan/       <span class="pin">← qwen-image-2.1</span>
-<span class="on">ds4/</span>                   <span class="c">your own build</span>
 
-<span class="c">// hemera.json</span>
-{ <span class="m">"name"</span>: <span class="s">"qwen3-coder-long"</span>,
-  <span class="m">"file"</span>: <span class="s">"/models/Qwen3-Coder-Q4_K_M.gguf"</span>,
-  <span class="m">"engineVersion"</span>: <span class="s">"b10253"</span>,
-  <span class="m">"engineVariant"</span>: <span class="s">"vulkan"</span>,
-  <span class="m">"args"</span>: [<span class="s">"-c"</span>, <span class="s">"131072"</span>] }</div>
+<span class="c">beside them, binaries you built yourself:</span>
+<span class="on">whisper-server</span>         <span class="pin">← whisper-large-v3-turbo</span>
+<span class="on">audiocpp_server</span>  vulkan <span class="pin">← voxcpm2</span>
+<span class="on">audiocpp_server</span>  npu    <span class="pin">← voxcpm2-npu</span>
+<span class="on">ds4</span>                    <span class="c">any server with an OpenAI API</span></div>
       </div>
     </div>
   </section>
 
-  <!-- ======================= ENGINES ======================= -->
-  <section id="engines" style="padding-top:24px">
+  <!-- ======================= FEATURE CARDS ======================= -->
+  <section style="padding-top:24px">
     <div class="wrap">
       <div class="head reveal">
-        <div class="eyebrow">Supported binaries</div>
-        <h2>Bring the engines.<br>Hemera speaks for them.</h2>
-        <p class="sub">Managed engines are downloaded from their GitHub releases and version-tracked. Anything else is a binary path: <code>{port}</code>, <code>{file}</code> and <code>{mmproj}</code> in its arguments are filled in at launch.</p>
+        <div class="eyebrow">Built for one shared machine</div>
+        <h2>Many models, one GPU,<br>no drama.</h2>
+        <p class="sub">Everything runs on the hardware you already have. Hemera decides what loads, what waits and what gets out of the way.</p>
       </div>
-      <div class="table-wrap reveal">
-        <table class="engines-table">
-          <thead>
-            <tr><th>Engine</th><th>Makes</th><th>How hemera gets it</th><th>Backends</th><th>Served on</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><b>llama.cpp</b><br><small>ggml-org/llama.cpp</small></td>
-              <td>Text, tool calls, reasoning, vision &amp; audio input, embeddings</td>
-              <td>Managed — every release and variant, side by side</td>
-              <td><div class="tags"><span class="tag sun">ROCm</span><span class="tag ind">Vulkan</span><span class="tag">CUDA</span><span class="tag">SYCL</span><span class="tag">CPU</span></div></td>
-              <td><code>/v1/chat/completions</code> <code>/api/chat</code> <code>/v1/messages</code> <code>/v1/embeddings</code></td>
-            </tr>
-            <tr>
-              <td><b>stable-diffusion.cpp</b><br><small>leejet/stable-diffusion.cpp</small></td>
-              <td>Images, image edits (multi-reference), video</td>
-              <td>Managed, like llama.cpp; VAE and text encoder paired automatically</td>
-              <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag sun">ROCm</span></div></td>
-              <td><code>/v1/images/generations</code> <code>/v1/images/edits</code> <code>/v1/videos</code></td>
-            </tr>
-            <tr>
-              <td><b>whisper.cpp</b><br><small>whisper-server</small></td>
-              <td>Transcription, translation, live dictation</td>
-              <td>Binary path (built from source with <code>-DGGML_VULKAN=ON</code>)</td>
-              <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag">CPU</span></div></td>
-              <td><code>/v1/audio/transcriptions</code> <code>/v1/audio/translations</code> <code>/v1/realtime</code></td>
-            </tr>
-            <tr>
-              <td><b>audio.cpp</b><br><small>audiocpp_server</small></td>
-              <td>Text to speech (VoxCPM2, OmniVoice, Kokoro…), speaker diarization, live voice conversion</td>
-              <td>Binary path; hemera writes its model config per model</td>
-              <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag ok">XDNA NPU</span><span class="tag">CPU</span></div></td>
-              <td><code>/v1/audio/speech</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code></td>
-            </tr>
-            <tr>
-              <td><b>ollama's llama-server</b><br><small>/usr/local/lib/ollama</small></td>
-              <td>Models upstream llama.cpp rejects yet, and embedded vision towers</td>
-              <td>Binary path + <code>libraryPaths</code>; <code>GGML_BACKEND_PATH</code> set for you</td>
-              <td><div class="tags"><span class="tag sun">ROCm</span><span class="tag ind">Vulkan</span><span class="tag">CUDA</span></div></td>
-              <td>Same as llama.cpp</td>
-            </tr>
-            <tr>
-              <td><b>ds4</b> &amp; any server<br><small>antirez/ds4 preset</small></td>
-              <td>Whatever it serves over an OpenAI-style API</td>
-              <td><strong>Add engine</strong> in the UI, or a <code>binaryPath</code></td>
-              <td><div class="tags"><span class="tag">your build</span></div></td>
-              <td>Same as llama.cpp</td>
-            </tr>
-            <tr>
-              <td><b>ComfyUI</b><br><small>your install</small></td>
-              <td>Image, video and 3D models that only exist as workflows</td>
-              <td>Bridged, not managed — nothing installed into it</td>
-              <td><div class="tags"><span class="tag">whatever it runs on</span></div></td>
-              <td><code>/v1/images/*</code> <code>/v1/videos</code> <code>/v1/3d/generations</code></td>
-            </tr>
-            <tr>
-              <td><b>Remote providers</b><br><small>proxies</small></td>
-              <td>DeepSeek, OpenAI, Gemini, Claude as local model names</td>
-              <td><code>"type": "openai"</code> or <code>"anthropic"</code> with a base URL and key</td>
-              <td><div class="tags"><span class="tag">cloud</span></div></td>
-              <td>All three dialects, translated</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="grid" style="margin-top:18px">
+      <div class="grid">
         <div class="card reveal">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="18" cy="17" r="2"/></svg></div>
           <h3>Three dialects, one port</h3>
-          <p>Ollama, OpenAI and Anthropic APIs, with streaming, tool calls and reasoning translated across all three — which is what lets Claude Code drive a local GGUF.</p>
+          <p>Ollama, OpenAI and Anthropic APIs, with streaming, tool calls and reasoning translated across all three — which is what lets Claude Code drive a local model.</p>
         </div>
         <div class="card reveal">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg></div>
           <h3>Models say what they are</h3>
-          <p><code>/v1/models</code> carries a <code>hemera</code> object — kind, endpoint, typed parameters with ranges — and <code>/api/tags</code> adds <code>image</code>, <code>video</code>, <code>3d</code> and <code>speech</code> to Ollama's capabilities.</p>
+          <p>Every model lists its kind, its endpoint and its settings with ranges — enough for an app to build a form without knowing the model in advance.</p>
         </div>
         <div class="card reveal">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="8"/></svg></div>
@@ -1572,19 +239,23 @@
         <div class="card reveal">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
           <h3>Live audio goes first</h3>
-          <p>Speech on the GPU freezes the LLMs for its few seconds; speech on the NPU freezes nothing. Requests marked <code>background</code> wait while a call is live.</p>
+          <p>Speech on the GPU briefly pauses the language models so it never stutters; speech on the NPU pauses nothing. Bulk jobs wait while a call is live.</p>
         </div>
         <div class="card reveal">
           <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg></div>
           <h3>Cancel actually frees the GPU</h3>
-          <p>Close an image stream, delete a video or 3D job, and the work stops — not just the wait. Hung ComfyUI jobs are detected, restarted and retried once.</p>
+          <p>Stop an image, a video or a 3D job and the work stops — not just the wait. Hung jobs are noticed, restarted and retried once.</p>
         </div>
         <div class="card reveal">
-          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></div>
-          <h3>Files are never lost</h3>
-          <p><code>ollama rm</code> drops a configuration, not a file. Deleting a model file is a separate step that names every model it takes along and asks you to type the filename.</p>
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1-.6-7.95A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/></svg></div>
+          <h3>Remote models look local</h3>
+          <p>DeepSeek, OpenAI, Gemini and Claude can sit in the same list as ordinary model names, translated into whichever dialect the client speaks.</p>
         </div>
       </div>
+      <div class="engine-strip reveal">
+        <span class="chip">llama.cpp</span><span class="chip">stable-diffusion.cpp</span><span class="chip">whisper.cpp</span><span class="chip">audio.cpp</span><span class="chip">ollama's llama-server</span><span class="chip">ds4</span><span class="chip">ComfyUI</span><span class="chip">any OpenAI-style server</span>
+      </div>
+      <a class="more reveal" href="docs/#engines">Every supported engine, and how to add yours →</a>
     </div>
   </section>
 
@@ -1594,51 +265,37 @@
       <div class="head reveal">
         <div class="eyebrow">The ComfyUI bridge</div>
         <h2>Workflows in.<br>Model names out.</h2>
-        <p class="sub">The newest 3D and video models ship as ComfyUI workflows long before anything else runs them. Hemera does not replace ComfyUI — it fronts it, over the same HTTP API ComfyUI's own page uses.</p>
+        <p class="sub">The newest 3D and video models ship as ComfyUI workflows long before anything else runs them. Hemera does not replace ComfyUI — it fronts it, so those models become ordinary names in the same list.</p>
       </div>
       <div class="steps">
-        <div class="step reveal"><h3>Point at it</h3><p>Its folder (hemera starts and stops it) or the URL of one already running. Nothing is installed into ComfyUI.</p></div>
-        <div class="step reveal"><h3>Hemera looks</h3><p>It asks ComfyUI which model files and nodes it has — including folders from <code>extra_model_paths.yaml</code> — every half minute.</p></div>
-        <div class="step reveal"><h3>Recipes match</h3><p>A recipe names the files a family needs, the request parameters and the workflow. Each match is offered as a model under its file name.</p></div>
-        <div class="step reveal"><h3>Requests run</h3><p>An OpenAI-shaped request fills the workflow, queues it, reports real progress, and returns the image, mp4 or <code>.glb</code>.</p></div>
+        <div class="step reveal"><h3>Point at it</h3><p>Tell hemera where ComfyUI is. Nothing is installed into it and none of its files are touched.</p></div>
+        <div class="step reveal"><h3>Hemera looks</h3><p>It asks ComfyUI which model files and nodes it has. Drop in a new file and it is offered within half a minute.</p></div>
+        <div class="step reveal"><h3>Recipes match</h3><p>A recipe turns a family of files into a model. Built-ins cover the popular ones; your own are drafted from a workflow export.</p></div>
+        <div class="step reveal"><h3>Requests run</h3><p>An OpenAI-shaped request fills the workflow and returns the image, the mp4 or the <code>.glb</code> — with progress and cancel.</p></div>
       </div>
       <div class="split" style="align-items:start">
-        <div class="stack-terms reveal">
-          <div class="term">
-            <div class="bar"><span>hemera.json — the whole setup</span><button class="copy" type="button">Copy</button></div>
-<pre><span class="s">"comfyui"</span>: {
-  <span class="m">"dir"</span>: <span class="s">"/opt/ComfyUI"</span>,          <span class="c">// folder with main.py</span>
-  <span class="c">// or: "url": "http://127.0.0.1:8188"</span>
-  <span class="m">"keepAliveSeconds"</span>: 300,     <span class="c">// then ask it to unload</span>
-  <span class="m">"stallSeconds"</span>: 900,         <span class="c">// silence = hung job</span>
-  <span class="m">"cancelSeconds"</span>: 15          <span class="c">// then kill to free GPU</span>
-}</pre>
-          </div>
-          <div class="term">
-            <div class="bar"><span>what it found</span><button class="copy" type="button">Copy</button></div>
-<pre><span class="p">$ </span>curl -s hemera:12434/v1/models | jq -r \
-  '.data[] | select(.owned_by=="comfyui") | "\(.hemera.kind)\t\(.id)"'
-<span class="m">3d</span>      trellis_2_int8_convrot
+        <div class="term reveal">
+          <div class="bar"><span>what hemera found in ComfyUI</span></div>
+<pre><span class="m">3d</span>      trellis_2_int8_convrot
 <span class="m">3d</span>      pixal3d_int8_convrot
 <span class="m">3d</span>      hunyuan_3d_v2.1
 <span class="m">video</span>   ltx25_uncensored_v1.1-fp8
 <span class="m">video</span>   Omoda_v1.5_MiniMaxH3_fl2va_int8_pruned
 <span class="m">image</span>   qwen-image-bf16</pre>
-          </div>
         </div>
         <div class="reveal">
           <ul class="checks" style="margin-top:0">
-            <li><b>Recipes from your own workflow.</b> Export it with <em>Save (API Format)</em>, press <strong>New recipe</strong>, and hemera drafts it: which inputs pick model files, which take prompt, seed, steps, size or image, and which node saves the result — ranges read from ComfyUI.</li>
-            <li><b>A form, not JSON.</b> A live check of what each file pattern matches right now; any input of any node can become a client setting. <em>Edit as JSON</em> is there for the odd case.</li>
-            <li><b>Built-ins you can override.</b> Edit one and it becomes yours; <strong>Revert</strong> brings the original back, <strong>Switch off</strong> hides it.</li>
-            <li><b>Memory per recipe.</b> Each recipe says what one job needs at its peak (<code>memoryMB</code>), and hemera unloads idle models until it fits — ComfyUI's own free-memory reading misses what Vulkan engines hold.</li>
-            <li><b>Start, Restart, Stop</b> from the Directories tab, with the exit code and last output when ComfyUI dies.</li>
+            <li><b>Your own workflow, as a model.</b> Export it from ComfyUI, press <strong>New recipe</strong>, and hemera works out which inputs are the prompt, the seed, the size or the image.</li>
+            <li><b>A form, not JSON.</b> See live which files each recipe matches; turn any node input into a setting clients may change.</li>
+            <li><b>Room for every job.</b> Each recipe knows how much memory it needs, and hemera makes room before the job starts.</li>
+            <li><b>Start, restart, stop</b> ComfyUI from the web UI — and see why it died when it does.</li>
           </ul>
           <div class="chips">
             <span class="chip"><b>3D</b>TRELLIS.2</span><span class="chip"><b>3D</b>Pixal3D</span><span class="chip"><b>3D</b>Hunyuan3D 2.1</span>
             <span class="chip"><b>video</b>LTX-2.5</span><span class="chip"><b>video</b>MiniMax H3 · turbo</span>
             <span class="chip"><b>image</b>Qwen-Image</span><span class="chip"><b>image</b>Qwen-Image 2.1 Turbo</span>
           </div>
+          <a class="more" href="docs/#comfyui">Set up the bridge →</a>
         </div>
       </div>
     </div>
@@ -1648,225 +305,30 @@
   <section id="three" style="padding-top:24px">
     <div class="wrap">
       <div class="three reveal">
-        <div class="split">
+        <div class="split" style="align-items:center">
           <div>
             <svg class="mesh" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><path d="M50 10 88 30v40L50 90 12 70V30z"/><path d="M12 30l38 20 38-20M50 50v40"/><path d="M31 20l38 20M69 20 31 40" opacity=".35"/></svg>
             <div class="eyebrow">hemera's own endpoint</div>
             <h2>A 3D API<br>OpenAI never wrote.</h2>
-            <p class="sub">The OpenAI specification has images, video and audio — but no 3D. So hemera defines <code>/v1/3d/generations</code>: image in, <code>.glb</code> out. It mirrors the Videos API on purpose — same job lifecycle, same status values — so one piece of client code drives both.</p>
-            <div class="endpoints">
-              <div class="ep"><span class="verb post">POST</span><code>/v1/3d/generations</code></div>
-              <div class="ep"><span class="verb">GET</span><code>/v1/3d/generations/{id}</code></div>
-              <div class="ep"><span class="verb">GET</span><code>/v1/3d/generations/{id}/content</code></div>
-              <div class="ep"><span class="verb del">DELETE</span><code>/v1/3d/generations/{id}</code></div>
-              <div class="ep"><span class="verb">GET</span><code>/v1/3d/generations</code></div>
-            </div>
+            <p class="sub">The OpenAI specification has images, video and audio — but no 3D. So hemera defines one: a picture in, a <code>.glb</code> mesh out. It works exactly like the Videos API, so the same client code drives both.</p>
             <ul class="checks">
-              <li><b><code>texture</code></b> — <code>vertex</code> (minutes), <code>pbr</code> with base colour, metallic, roughness, normal and occlusion maps (tens of minutes), or <code>none</code>.</li>
-              <li><b><code>faces</code>, <code>texture_size</code>, <code>remove_background</code>, <code>seed</code></b> — and every model publishes its own parameters with ranges in <code>/v1/models</code>.</li>
-              <li><b>Real progress</b> 0–100, cancel with <code>DELETE</code>, and the parameters actually used come back for reproducibility.</li>
+              <li><b>Vertex colours in minutes</b>, or full PBR textures — base colour, metallic, roughness, normal, occlusion.</li>
+              <li><b>Real progress and cancel</b>, and the settings actually used come back with the mesh.</li>
+              <li><b>Opens anywhere.</b> Any glTF viewer loads the result directly — <a href="https://aether.ing" style="color:var(--sun)">aether.ing</a> shows it with lighting, maps and wireframe.</li>
             </ul>
+            <a class="more" href="docs/#three">3D API reference →</a>
           </div>
-          <div class="stack-terms">
-            <div class="term">
-              <div class="bar"><span>picture → mesh</span><button class="copy" type="button">Copy</button></div>
+          <div class="term">
+            <div class="bar"><span>picture → mesh</span></div>
 <pre><span class="p">$ </span>curl hemera:12434/v1/3d/generations \
     -F model=trellis_2_int8_convrot \
     -F image=@teapot.png -F texture=pbr
 {"id":"3d_8c3cc8d0de436","status":"queued"}
 
-<span class="p">$ </span>curl hemera:12434/v1/3d/generations/3d_8c3cc8d0de436
-{"status":"in_progress","progress":42, …}
-
-<span class="p">$ </span>curl hemera:12434/v1/3d/generations/3d_8c3cc8d0de436/content \
+<span class="p">$ </span>curl hemera:12434/v1/3d/generations/3d_8c3c…/content \
     -o teapot.glb</pre>
-            </div>
-            <div class="term">
-              <div class="bar"><span>the job object</span></div>
-<pre>{ <span class="m">"id"</span>: <span class="s">"3d_8c3cc8d0de436"</span>, <span class="m">"object"</span>: <span class="s">"3d.generation"</span>,
-  <span class="m">"model"</span>: <span class="s">"hunyuan_3d_v2.1"</span>,
-  <span class="m">"status"</span>: <span class="s">"completed"</span>, <span class="m">"progress"</span>: 100,
-  <span class="m">"parameters"</span>: { <span class="m">"steps"</span>: 30, <span class="m">"cfg_scale"</span>: 5,
-                  <span class="m">"resolution"</span>: 256, <span class="m">"seed"</span>: 7 },
-  <span class="m">"output"</span>: { <span class="m">"format"</span>: <span class="s">"glb"</span>,
-              <span class="m">"content_type"</span>: <span class="s">"model/gltf-binary"</span>,
-              <span class="m">"url"</span>: <span class="s">"/v1/3d/generations/3d_…/content"</span> } }</pre>
-            </div>
-            <p class="fine" style="margin:0">Any glTF viewer loads the result straight from the <code>content</code> URL — <a href="https://aether.ing" style="color:var(--sun)">aether.ing</a> shows it with PBR lighting, maps and wireframe. The full contract is in <a href="https://github.com/peprasetya/hemera/blob/main/docs/media-api.md" style="color:var(--sun)">docs/media-api.md</a>.</p>
           </div>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ======================= SETUP ======================= -->
-  <section id="setup">
-    <div class="wrap">
-      <div class="head reveal">
-        <div class="eyebrow">Setup</div>
-        <h2>From a jar to a model server<br>in five minutes.</h2>
-        <p class="sub">Hemera runs on Linux x86-64 with a JDK 21 or newer. The reference machine is an AMD Ryzen AI Max+ 395 (Radeon 8060S, 128 GB, XDNA NPU) on Ubuntu — but nothing in it is vendor-specific.</p>
-      </div>
-      <div class="setup">
-        <div class="setup-step reveal">
-          <div>
-            <div class="num">01</div>
-            <h3>What you need</h3>
-            <p>Only a JDK to run hemera. The rest depends on what you want to serve.</p>
-          </div>
-          <div>
-            <ul>
-              <li><b>JDK 21+</b> (OpenJDK is fine). No Maven, no Python, no containers.</li>
-              <li><b>A GPU runtime</b> for your engines — Mesa/Vulkan drivers, ROCm, or CUDA. Hemera finds the libraries itself and tells you when one is missing.</li>
-              <li><b>ffmpeg</b> on the PATH (optional) — for WebM/Ogg/M4A speech input and MP3/Opus/AAC speech output.</li>
-              <li><b>Model files</b> — GGUFs anywhere on disk, or an existing ollama store.</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="setup-step reveal">
-          <div>
-            <div class="num">02</div>
-            <h3>Download and run</h3>
-            <p>Config (<code>hemera.json</code>) and engine binaries live next to the jar unless you pass <code>--home</code> or set <code>HEMERA_HOME</code>.</p>
-          </div>
-          <div class="term">
-            <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
-<pre>mkdir -p /opt/hemera && cd /opt/hemera
-curl -LO https://github.com/peprasetya/hemera/releases/latest/download/hemera.jar
-java -jar hemera.jar --port 12434      <span class="c"># [--home dir] [--log info|debug|trace]</span></pre>
-          </div>
-        </div>
-
-        <div class="setup-step reveal">
-          <div>
-            <div class="num">03</div>
-            <h3>Keep it running</h3>
-            <p>The systemd unit in the repo sets <code>OOMPolicy=continue</code>: engines share hemera's cgroup, and an oversized model should cost that model, not the gateway. Hemera also marks engines as preferred OOM victims.</p>
-          </div>
-          <div class="term">
-            <div class="bar"><span>systemd</span><button class="copy" type="button">Copy</button></div>
-<pre>curl -L -o /etc/systemd/system/hemera.service \
-  https://raw.githubusercontent.com/peprasetya/hemera/main/hemera.service
-systemctl daemon-reload && systemctl enable --now hemera
-journalctl -u hemera -f</pre>
-          </div>
-        </div>
-
-        <div class="setup-step reveal">
-          <div>
-            <div class="num">04</div>
-            <h3>Install engines, add models</h3>
-            <p>Open <code>http://host:12434/</code> — the configure UI. Plain HTML, no third-party assets, follows your OS theme, works on a phone.</p>
-          </div>
-          <div>
-            <ul>
-              <li><b>Engines</b> — pick a llama.cpp or stable-diffusion.cpp release and variant and install it. Install another one next to it any time. <strong>Add engine</strong> registers a binary you built yourself (ds4, whisper.cpp, audio.cpp, ollama's runner).</li>
-              <li><b>Directories</b> — add model folders and ollama repositories; point hemera at ComfyUI.</li>
-              <li><b>Models</b> — scanned files with projectors, MTP draft heads, VAEs and text encoders paired automatically. Configure a file as one or more named models; <strong>Load</strong> warms it now and reports any error.</li>
-              <li><b>Proxies</b> — remote providers under local names. <b>Voices</b> — the voice library for speech.</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="setup-step reveal">
-          <div>
-            <div class="num">05</div>
-            <h3>Point your tools at it</h3>
-            <p>Every client sees the same models. Hemera does not check API keys; put it behind your own proxy if it faces a network you do not trust.</p>
-          </div>
-          <div class="term">
-            <div class="bar"><span>clients</span><button class="copy" type="button">Copy</button></div>
-<pre><span class="c"># Ollama CLI and anything that speaks Ollama</span>
-OLLAMA_HOST=host:12434 ollama list
-
-<span class="c"># OpenAI SDKs</span>
-OPENAI_BASE_URL=http://host:12434/v1 OPENAI_API_KEY=local python app.py
-
-<span class="c"># Claude Code on a local GGUF, through /v1/messages</span>
-ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
-  claude --model qwen3-coder</pre>
-          </div>
-        </div>
-
-        <div class="setup-step reveal">
-          <div>
-            <div class="num">06</div>
-            <h3>Bridge ComfyUI</h3>
-            <p>Have a working ComfyUI with its custom nodes and model files (TRELLIS.2, Hunyuan3D, LTX…). Then tell hemera where it is — in the Directories tab or in <code>hemera.json</code>.</p>
-            <p>Its virtualenv is found as <code>venv/</code> or <code>.venv/</code> in or beside the folder; set <code>python</code> otherwise.</p>
-          </div>
-          <div class="term">
-            <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
-<pre>"comfyui": {
-  "dir": "/opt/ComfyUI",
-  "python": "/opt/ComfyUI/venv/bin/python",   <span class="c">// only if not found</span>
-  "args": [],                   <span class="c">// extra flags for main.py</span>
-  "autoStart": true,
-  "memoryMB": 24576,           <span class="c">// fallback when a recipe has none</span>
-  "exclusiveGpu": false
-}</pre>
-          </div>
-        </div>
-
-        <div class="setup-step reveal">
-          <div>
-            <div class="num">07</div>
-            <h3>Add speech (optional)</h3>
-            <p>whisper.cpp publishes GPU builds only for Windows, so on Linux build it with Vulkan. audio.cpp runs on Vulkan, CPU, or — for Ryzen AI — the NPU; the same voice can be offered on both and the client chooses by name.</p>
-          </div>
-          <div class="term">
-            <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
-<pre>"engines": {
-  "whisper.cpp":   { "binaryPath": "/opt/whisper.cpp/build/bin/whisper-server" },
-  "audio.cpp":     { "binaryPath": "/opt/audio.cpp/build/audiocpp_server",
-                     "defaultArgs": ["--backend", "vulkan"] },
-  "audio.cpp-npu": { "binaryPath": "/opt/audio.cpp/build-npu/audiocpp_server",
-                     "argStyle": "audiocpp", "healthPath": "/health",
-                     "defaultArgs": ["--backend", "npu", "--threads", "2"] }
-},
-"models": [
-  { "name": "whisper-large-v3-turbo", "engine": "whisper.cpp",
-    "file": "/models/ggml-large-v3-turbo-q8_0.bin" },
-  { "name": "voxcpm2", "engine": "audio.cpp", "family": "voxcpm2",
-    "mode": "streaming", "file": "/models/voxcpm2-q8_0.gguf" }
-]</pre>
-          </div>
-        </div>
-
-        <div class="setup-step reveal">
-          <div>
-            <div class="num">08</div>
-            <h3>Or build it yourself</h3>
-            <p>No build system: one <code>javac</code> and one <code>jar</code> call. The source is small enough to read in an afternoon.</p>
-          </div>
-          <div class="term">
-            <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
-<pre>git clone https://github.com/peprasetya/hemera.git && cd hemera
-./build.sh                    <span class="c"># -> hemera.jar</span></pre>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ======================= API ======================= -->
-  <section id="api" style="padding-top:24px">
-    <div class="wrap">
-      <div class="head reveal">
-        <div class="eyebrow">API surface</div>
-        <h2>Speak the dialect<br>your tool already knows.</h2>
-      </div>
-      <div class="table-wrap reveal">
-        <table>
-          <thead><tr><th>Dialect</th><th>Endpoints</th></tr></thead>
-          <tbody>
-            <tr><td><b>Ollama</b></td><td><code>/api/tags</code> <code>/api/ps</code> <code>/api/show</code> <code>/api/chat</code> <code>/api/generate</code> <code>/api/embed</code> <code>/api/delete</code> <code>/api/stop</code> <code>/api/version</code></td></tr>
-            <tr><td><b>OpenAI</b></td><td><code>/v1/models</code> <code>/v1/chat/completions</code> <code>/v1/completions</code> <code>/v1/embeddings</code> <code>/v1/images/generations</code> <code>/v1/images/edits</code> <code>/v1/videos</code> <code>/v1/audio/transcriptions</code> <code>/v1/audio/translations</code> <code>/v1/audio/speech</code> <code>/v1/realtime</code></td></tr>
-            <tr><td><b>Anthropic</b></td><td><code>/v1/messages</code> <code>/v1/messages/count_tokens</code></td></tr>
-            <tr><td><b>hemera</b></td><td><code>/v1/3d/generations</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code> (WebSocket) · admin under <code>/hemera/api/…</code></td></tr>
-          </tbody>
-        </table>
       </div>
     </div>
   </section>
@@ -1891,10 +353,10 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
   <div class="final">
     <div class="wrap reveal">
       <h2>Keep every engine.<br><span class="grad">Serve them as one.</span></h2>
-      <p class="sub" style="margin:0 auto 32px">Download the jar, run it with Java, install the engines you want from the browser. Source, releases and the media API contract are on <a href="https://github.com/peprasetya/hemera">GitHub</a>.</p>
+      <p class="sub" style="margin:0 auto 32px">Download the jar, run it with Java, install the engines you want from the browser. The docs take you from there to your first model, ComfyUI and speech.</p>
       <div class="cta" style="margin:0">
         <a class="btn btn-sun" href="https://github.com/peprasetya/hemera/releases/latest/download/hemera.jar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Download hemera.jar</a>
-        <a class="btn btn-ghost" href="https://aether.ing/">Meet aether.ing</a>
+        <a class="btn btn-ghost" href="docs/">Read the docs</a>
       </div>
     </div>
   </div>
@@ -1904,9 +366,9 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
   <div class="wrap">
     <div>© <span id="year">2026</span> aether.ing — hemera, the engine room for local AI</div>
     <nav>
+      <a href="docs/">Docs</a>
       <a href="https://github.com/peprasetya/hemera">GitHub</a>
       <a href="https://github.com/peprasetya/hemera/releases">Releases</a>
-      <a href="https://github.com/peprasetya/hemera/blob/main/docs/media-api.md">Media API</a>
       <a href="https://aether.ing/">aether.ing</a>
       <a href="../privacy.html">Privacy Policy</a>
       <a href="../tos.html">Terms of Service</a>
@@ -1934,31 +396,6 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
       });
     }, { rootMargin: '0px 0px -8% 0px' });
     for (var j = 0; j < items.length; j++) io.observe(items[j]);
-  })();
-  (function ()
-  {
-    var buttons = document.querySelectorAll('.copy');
-    for (var i = 0; i < buttons.length; i++)
-    {
-      buttons[i].addEventListener('click', function ()
-      {
-        var btn = this;
-        var pre = btn.closest('.term').querySelector('pre');
-        var text = pre.innerText.replace(/^\$ /gm, '');
-        var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
-        if (navigator.clipboard && window.isSecureContext)
-          navigator.clipboard.writeText(text).then(done, function () {});
-        else
-        {
-          var ta = document.createElement('textarea');
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          try { document.execCommand('copy'); done(); } catch (e) {}
-          document.body.removeChild(ta);
-        }
-      });
-    }
   })();
 </script>
 </body>

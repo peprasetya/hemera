@@ -2,7 +2,7 @@
 
 **A flexible wrapper and router for local AI engines — part of the [aether.ing](https://aether.ing) project.**
 
-Website: **[aether.ing/hemera](https://aether.ing/hemera/)** · Download:
+Website: **[aether.ing/hemera](https://aether.ing/hemera/)** · Docs: [aether.ing/hemera/docs](https://aether.ing/hemera/docs/) · Download:
 **[hemera.jar](https://github.com/peprasetya/hemera/releases/latest/download/hemera.jar)** (latest release) ·
 Client contract: [docs/media-api.md](docs/media-api.md)
 
@@ -779,7 +779,10 @@ resources/web/         index.html, app.css, app.js
 resources/comfyui/     built-in recipes, one per model family
 docs/media-api.md      the image / video / 3D / speech contract for client authors
 docs/integrate-*.md    hand-off notes for aether.ing and spatiand: which endpoints, how, and what stays in the app
-site/index.html        the website at aether.ing/hemera (self-contained, no external assets)
+site/                  the website at aether.ing/hemera, no external assets:
+  index.html           start page, features only
+  docs/index.html      setup, engines, ComfyUI, speech, 3D API and configuration
+  style.css            shared by both; bump ?v= in the pages when it changes
 ```
 
 ## License
