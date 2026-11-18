@@ -380,12 +380,12 @@ has, and every model it knows a workflow for appears in `/v1/models` under the n
 
 ```bash
 curl -s http://host:12434/v1/models | jq -r '.data[] | select(.owned_by=="comfyui") | "\(.hemera.kind)\t\(.id)"'
-3d      trellis_2_int8_convrot
-3d      pixal3d_int8_convrot
+3d      trellis_2_bf16
+3d      pixal3d_bf16
 3d      hunyuan_3d_v2.1
-video   ltx25_uncensored_v1.1-fp8
-video   Omoda_v1.5_MiniMaxH3_fl2va_int8_pruned
-image   qwen-image-bf16
+video   ltx-2.5-dev-fp8
+video   minimax_h3_bf16
+image   qwen_image_fp8_e4m3fn
 ```
 
 The list follows ComfyUI: drop another file into its `diffusion_models` folder (or any folder
@@ -394,7 +394,7 @@ gone. Image models answer on `/v1/images/generations`, video models on `/v1/vide
 like the sd.cpp ones, and 3D models on an endpoint of hemera's own:
 
 ```bash
-curl http://host:12434/v1/3d/generations -F model=trellis_2_int8_convrot -F image=@teapot.png
+curl http://host:12434/v1/3d/generations -F model=trellis_2_bf16 -F image=@teapot.png
                                                              # -> {"id":"3d_...","status":"queued"}
 curl http://host:12434/v1/3d/generations/3d_...             # queued | in_progress (progress 0-100) | completed
 curl http://host:12434/v1/3d/generations/3d_.../content -o teapot.glb

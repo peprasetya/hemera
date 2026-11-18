@@ -17,7 +17,8 @@
    "match": [
     "(?i)^qwen3vl_8b_int8_convrot\\.safetensors$",
     "(?i)^qwen3vl_8b_bf16\\.safetensors$",
-    "(?i)^qwen3vl_8b_w4a8\\.safetensors$"
+    "(?i)^qwen3vl_8b_w4a8\\.safetensors$",
+    "(?i)^qwen3.?vl.?8b(?!.*minimax).*\\.safetensors$"
    ],
    "set": [
     "2.clip_name"

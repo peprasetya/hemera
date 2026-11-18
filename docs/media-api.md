@@ -38,7 +38,7 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
     { "id": "voxcpm2-npu", "object": "model", "created": 1791656743, "owned_by": "hemera",
       "hemera": { "kind": "speech", "backend": "audio.cpp-npu", "endpoint": "/v1/audio/speech" } },
 
-    { "id": "pixal3d_int8_convrot", "object": "model", "created": 1791656743, "owned_by": "comfyui",
+    { "id": "pixal3d_bf16", "object": "model", "created": 1791656743, "owned_by": "comfyui",
       "hemera": {
         "kind": "3d", "backend": "comfyui", "family": "pixal3d", "title": "Pixal3D",
         "description": "Image to 3D mesh. Follows the source image most closely ...",
@@ -76,7 +76,7 @@ For clients built on the Ollama API. Entries have Ollama's usual fields, and eve
 `capabilities` — Ollama's own way of saying what a model can do, extended with hemera's kinds:
 
 ```json
-{ "name": "trellis_2_int8_convrot", "model": "trellis_2_int8_convrot", "size": 0, "digest": "...",
+{ "name": "trellis_2_bf16", "model": "trellis_2_bf16", "size": 0, "digest": "...",
   "details": { "format": "comfyui", "family": "trellis2", ... },
   "capabilities": ["3d"],
   "hemera": { "kind": "3d", "endpoint": "/v1/3d/generations", "parameters": { ... } } }
@@ -124,7 +124,7 @@ OpenAI's Images API. Synchronous: the reply is the image.
 
 ```bash
 curl http://host:12434/v1/images/generations -H 'Content-Type: application/json' -d '{
-  "model": "qwen-image-bf16", "prompt": "a red toy robot, product photo",
+  "model": "qwen_image_fp8_e4m3fn", "prompt": "a red toy robot, product photo",
   "size": "1024x1024", "steps": 20, "seed": 7 }'
 ```
 
@@ -145,7 +145,7 @@ OpenAI's Videos API. Asynchronous: create a job, poll it, download the file.
 
 ```bash
 curl http://host:12434/v1/videos -H 'Content-Type: application/json' -d '{
-  "model": "ltx25_uncensored_v1.1-fp8", "prompt": "a cat walks along a rainy neon alley, soft rain sound",
+  "model": "ltx-2.5-dev-fp8", "prompt": "a cat walks along a rainy neon alley, soft rain sound",
   "size": "768x448", "seconds": 4 }'
 ```
 
@@ -163,7 +163,7 @@ image-to-video), `end_image` (last frame, where the model lists it). ComfyUI vid
 generate a soundtrack with the picture; describe the sound in the prompt.
 
 ```json
-{ "id": "video_8c3f...", "object": "video", "model": "ltx25_uncensored_v1.1-fp8",
+{ "id": "video_8c3f...", "object": "video", "model": "ltx-2.5-dev-fp8",
   "status": "in_progress", "progress": 42, "created_at": 1791657044,
   "size": "768x448", "seconds": 4 }
 ```
@@ -187,11 +187,11 @@ same lifecycle, same status values — so one piece of client code can drive bot
 
 ```bash
 # multipart
-curl http://host:12434/v1/3d/generations -F model=trellis_2_int8_convrot -F image=@teapot.png -F texture=vertex
+curl http://host:12434/v1/3d/generations -F model=trellis_2_bf16 -F image=@teapot.png -F texture=vertex
 
 # JSON
 curl http://host:12434/v1/3d/generations -H 'Content-Type: application/json' -d '{
-  "model": "pixal3d_int8_convrot", "image": "data:image/png;base64,iVBORw0...", "texture": "pbr" }'
+  "model": "pixal3d_bf16", "image": "data:image/png;base64,iVBORw0...", "texture": "pbr" }'
 ```
 
 Request fields: `model` and `image` are required; everything else comes from the model's

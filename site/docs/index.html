@@ -405,12 +405,12 @@ WARN  [instance] 'qwen3-coder' may fall back to CPU: 3 libraries not found
         <div class="term">
           <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
 <pre><span class="c"># multipart</span>
-curl http://host:12434/v1/3d/generations -F model=trellis_2_int8_convrot \
+curl http://host:12434/v1/3d/generations -F model=trellis_2_bf16 \
   -F image=@teapot.png -F texture=vertex          <span class="c"># -> {"id":"3d_…","status":"queued"}</span>
 
 <span class="c"># JSON</span>
 curl http://host:12434/v1/3d/generations -H 'Content-Type: application/json' -d '{
-  "model": "pixal3d_int8_convrot", "image": "data:image/png;base64,iVBORw0...", "texture": "pbr" }'
+  "model": "pixal3d_bf16", "image": "data:image/png;base64,iVBORw0...", "texture": "pbr" }'
 
 curl http://host:12434/v1/3d/generations/3d_…            <span class="c"># queued | in_progress | completed</span>
 curl http://host:12434/v1/3d/generations/3d_…/content -o teapot.glb</pre>

@@ -276,12 +276,12 @@
       <div class="split" style="align-items:start">
         <div class="term reveal">
           <div class="bar"><span>what hemera found in ComfyUI</span></div>
-<pre><span class="m">3d</span>      trellis_2_int8_convrot
-<span class="m">3d</span>      pixal3d_int8_convrot
+<pre><span class="m">3d</span>      trellis_2_bf16
+<span class="m">3d</span>      pixal3d_bf16
 <span class="m">3d</span>      hunyuan_3d_v2.1
-<span class="m">video</span>   ltx25_uncensored_v1.1-fp8
-<span class="m">video</span>   Omoda_v1.5_MiniMaxH3_fl2va_int8_pruned
-<span class="m">image</span>   qwen-image-bf16</pre>
+<span class="m">video</span>   ltx-2.5-dev-fp8
+<span class="m">video</span>   minimax_h3_bf16
+<span class="m">image</span>   qwen_image_fp8_e4m3fn</pre>
         </div>
         <div class="reveal">
           <ul class="checks" style="margin-top:0">
@@ -321,7 +321,7 @@
           <div class="term">
             <div class="bar"><span>picture → mesh</span></div>
 <pre><span class="p">$ </span>curl hemera:12434/v1/3d/generations \
-    -F model=trellis_2_int8_convrot \
+    -F model=trellis_2_bf16 \
     -F image=@teapot.png -F texture=pbr
 {"id":"3d_8c3cc8d0de436","status":"queued"}
 
