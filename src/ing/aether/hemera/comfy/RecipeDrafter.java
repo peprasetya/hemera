@@ -84,16 +84,7 @@ final class RecipeDrafter
           consumers.computeIfAbsent(from, k -> new ArrayList<>()).add(new String[] { n.getKey(), in.getKey() });
 
     List<String> ids = new ArrayList<>(graph.keySet());
-    ids.sort((a, b) -> {
-      try
-      {
-        return Long.compare(Long.parseLong(a), Long.parseLong(b));
-      }
-      catch (NumberFormatException e)
-      {
-        return a.compareTo(b);
-      }
-    });
+    ids.sort(RecipeDrafter::compareIds);
 
     String kind = null;
     String outputNode = null;
@@ -109,7 +100,7 @@ final class RecipeDrafter
         continue;
       }
       String nodeTitle = Json.str(Json.obj(node.get("_meta")), "title", cls);
-      if (Json.bool(def, "output_node", false) && !cls.startsWith("Preview"))
+      if (Json.bool(def, "output_node", false) && !cls.contains("Preview") && !cls.contains("Compare"))
       {
         String k = kindOf(cls);
         outputs.add(Json.map("node", id, "class", cls, "title", nodeTitle, "kind", k));
@@ -218,6 +209,26 @@ final class RecipeDrafter
     recipe.put("output", Json.map("node", outputNode == null ? "" : outputNode));
     recipe.put("graph", blank(graph, files));
     return new Draft(recipe, candidates, outputs, notes);
+  }
+
+  /**
+   * Node ids in graph order: numbers by value, and the "76:12" of a node inside a subgraph part by
+   * part, numbers before anything that is not one, so the order is the same however ids mix.
+   */
+  static int compareIds(String a, String b)
+  {
+    String[] x = a.split(":");
+    String[] y = b.split(":");
+    for (int i = 0; i < Math.min(x.length, y.length); i++)
+    {
+      boolean xn = x[i].matches("-?\\d{1,18}");
+      boolean yn = y[i].matches("-?\\d{1,18}");
+      int c = xn && yn ? Long.compare(Long.parseLong(x[i]), Long.parseLong(y[i]))
+          : xn != yn ? (xn ? -1 : 1) : x[i].compareTo(y[i]);
+      if (c != 0)
+        return c;
+    }
+    return Integer.compare(x.length, y.length);
   }
 
   // ---- reading the workflow ------------------------------------------------------------------

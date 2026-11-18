@@ -374,8 +374,9 @@ where ComfyUI is, in the Directories tab or in `hemera.json`:
 }
 ```
 
-That is the whole setup for the families hemera has a recipe for (see *Recipes* below); any other
-model needs a recipe first, made once from a workflow that runs it. Nothing is installed into
+That is the whole setup for the families a recipe covers: hemera's own, yours, and ComfyUI's own
+workflow templates (see *Recipes* and *Templates* below); any other model needs a recipe first, made
+once from a workflow that runs it. Nothing is installed into
 ComfyUI and none of its files are touched.
 hemera asks it, over the same HTTP API its own page uses, which model files and which nodes it
 has, and every model it knows a workflow for appears in `/v1/models` under the name of its file:
@@ -430,6 +431,30 @@ workflow, `POST …/recipes/check` — and underneath it is just `<home>/comfyui
 can also be written by hand or handed to someone as a file. A model is offered only when ComfyUI has every file and node its recipe
 needs; the Directories tab says what is missing otherwise.
 
+**Templates.** ComfyUI ships its authors' workflow templates for the models it supports (the
+`comfyui_workflow_templates` packages, served at `/templates/`), and each local one names the files
+it needs, with their folder and download link. hemera reads them when ComfyUI or its set of nodes
+changes, converts each from the editor's format into the API format — subgraphs flattened, notes,
+reroutes and primitives resolved, a switch fixed in the workflow folded into the branch it selects,
+widget values matched to inputs by ComfyUI's own node definitions — and drafts a recipe from it the
+way *New recipe* does. Every value is checked against those definitions, and a template that does
+not line up exactly is left out rather than guessed at. Only templates that can run from a request
+are used: one result (image, video or 3D), at most one image in, no audio or video in, nothing that
+calls a paid service. They offer the settings every client knows (prompt, negative prompt, seed,
+steps, cfg, size, frames, fps, image); everything else stays as the template's authors set it, and a
+3D template's sampling stages keep their own steps while one seed reaches all of them. Measured
+against ComfyUI 0.42 with templates 0.11.96, 163 of the 254 local templates convert.
+
+Template recipes come after every other recipe: they only take files no built-in or own recipe
+claims, so they never change what an existing model is or how it runs. When several templates name
+the same file, the one needing no picture wins for images and video, the one taking a picture for
+3D, then the one ComfyUI's users run most. A template whose files or nodes are not all there leaves
+the file to the next one, and to *Not recognised* with the reason if none fits. Their memory figure
+is a guess (twice what the template downloads) that can only raise `comfyui.memoryMB`, never lower
+it; edit the recipe to set a measured `memoryMB`. In the Directories tab they are listed under *From
+ComfyUI's workflow templates*: **Edit** keeps your own version, **Switch off** hides one, and
+`"comfyui": {"templates": false}` turns them all off.
+
 Community checkpoints rarely follow a naming scheme, so a file no pattern recognises is listed
 under *Not recognised*, where it can be assigned to a family by hand (stored as
 `comfyui.assign: {"file.safetensors": "minimax-h3"}`) or hidden.
@@ -466,7 +491,7 @@ beside its folder), `args` (extra arguments for `main.py`), `env`, `autoStart` (
 start with hemera rather than at the first request), `memoryMB` (what a job is expected to need when
 its recipe does not say, default 24576; see memory below), `exclusiveGpu` (default `false`: when
 `true`, every other engine is unloaded before a ComfyUI job and an idle ComfyUI is stopped before
-another engine loads).
+another engine loads), `templates` (default `true`: use ComfyUI's workflow templates as recipes).
 
 If ComfyUI dies — typically the kernel killing it when memory runs out — the Directories tab says
 so, with the exit code and ComfyUI's last output, and offers **Start**; **Restart** and **Stop** are

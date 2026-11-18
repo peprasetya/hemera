@@ -318,7 +318,11 @@ public final class ComfyBridge
         nodes = new HashSet<>(info.keySet());
         nodesAt = now;
       }
+      maybeReadTemplates(version, info);
       List<Recipe> recipes = recipes();
+      // ComfyUI's own templates come last: they only take files no recipe above already claims
+      Set<String> fromTemplates = new HashSet<>();
+      recipes.addAll(templateRecipes(recipes, fromTemplates));
       Map<String, List<String>> folders = new LinkedHashMap<>();
       for (Recipe r : recipes)
       {
@@ -332,6 +336,7 @@ public final class ComfyBridge
       Set<String> ids = new HashSet<>();
       Set<String> modelFolders = new java.util.LinkedHashSet<>();
       List<Offer> offers = new ArrayList<>();
+      Map<String, List<Object>> templateMisses = new LinkedHashMap<>();
       for (Recipe r : recipes)
       {
         modelFolders.add(r.modelFolder);
@@ -357,10 +362,24 @@ public final class ComfyBridge
             if (!nodes.contains(type))
               problems.add("this ComfyUI has no '" + type + "' node — update it, or install the custom node");
           String id = stem(file);
-          if (!ids.add(id.toLowerCase(Locale.ROOT)))
-            problems.add("another file already goes by the name '" + id + "'");
-          else if (cfg.findModel(id) != null || cfg.findProxy(id) != null)
-            problems.add("a model configured in hemera is already called '" + id + "'");
+          boolean template = fromTemplates.contains(r.id);
+          if (!template || problems.isEmpty())
+          {
+            if (ids.contains(id.toLowerCase(Locale.ROOT)))
+              problems.add("another file already goes by the name '" + id + "'");
+            else if (cfg.findModel(id) != null || cfg.findProxy(id) != null)
+              problems.add("a model configured in hemera is already called '" + id + "'");
+          }
+          if (template && !problems.isEmpty())
+          {
+            // a template is a suggestion, not a promise: one that cannot run here leaves the file
+            // to the next template, and to "Not recognised" with the reason if none can
+            claimed.remove(r.modelFolder + "/" + file);
+            templateMisses.computeIfAbsent(r.modelFolder + "/" + file, k -> new ArrayList<>())
+                .add(Json.map("recipe", r.id, "title", r.title, "problems", problems));
+            continue;
+          }
+          ids.add(id.toLowerCase(Locale.ROOT));
           offers.add(new Offer(id, r, file, found, problems));
         }
       }
@@ -380,9 +399,10 @@ public final class ComfyBridge
           {
             List<String> fits = new ArrayList<>();
             for (Recipe r : recipes)
-              if (r.modelFolder.equals(folder))
+              if (r.modelFolder.equals(folder) && !fromTemplates.contains(r.id))
                 fits.add(r.id);
-            unassigned.add(Json.map("file", file, "folder", folder, "recipes", fits));
+            unassigned.add(Json.map("file", file, "folder", folder, "recipes", fits,
+                "templates", templateMisses.getOrDefault(folder + "/" + file, List.of())));
           }
       return new Snapshot(true, null, version, offers, unassigned, now);
     }
@@ -509,6 +529,124 @@ public final class ComfyBridge
     return new ArrayList<>(out.values());
   }
 
+  // ---- recipes from ComfyUI's own workflow templates ------------------------------------------
+
+  private volatile List<TemplateRecipes.Drafted> templates = List.of();
+  private volatile String templatesKey;
+  private volatile long templatesRetryAt;
+  private volatile Map<String, Object> templatesStatus = Json.map("state", "not read yet");
+  private final java.util.concurrent.atomic.AtomicBoolean templatesBusy = new java.util.concurrent.atomic.AtomicBoolean();
+
+  /** comfyui.templates: false keeps hemera to its own recipes. */
+  private boolean templatesOn()
+  {
+    return Json.bool(conf(), "templates", true);
+  }
+
+  /**
+   * Read ComfyUI's templates again when ComfyUI or its set of nodes changed — in the background,
+   * since that is a few hundred files, and a request should not wait for it. The models they bring
+   * appear at the next look.
+   */
+  private void maybeReadTemplates(String version, Map<String, Object> defs)
+  {
+    if (!templatesOn() || defs == null)
+      return;
+    String key = version + "|" + defs.keySet().hashCode();
+    if (key.equals(templatesKey) || System.currentTimeMillis() < templatesRetryAt
+        || !templatesBusy.compareAndSet(false, true))
+      return;
+    Thread.ofVirtual().name("comfyui-templates").start(() -> {
+      try
+      {
+        readTemplates(defs);
+        templatesKey = key;
+      }
+      catch (Exception e)
+      {
+        templatesRetryAt = System.currentTimeMillis() + NODES_TTL_MS;
+        templatesStatus = Json.map("state", "unavailable", "error", e.getMessage());
+        Log.info("comfyui", "ComfyUI's workflow templates are not available: " + e.getMessage());
+      }
+      finally
+      {
+        templatesBusy.set(false);
+        snapshot = null;
+      }
+    });
+  }
+
+  private void readTemplates(Map<String, Object> defs) throws Exception
+  {
+    Object index = get("/templates/index.json", 15);
+    List<TemplateRecipes.Drafted> all = new ArrayList<>();
+    Set<String> seen = new HashSet<>();
+    int cloud = 0;
+    for (Object category : Json.arr(index))
+      for (Map<String, Object> entry : Json.arrOfObj(Json.obj(category).get("templates")))
+      {
+        String name = Json.str(entry, "name", "");
+        if (name.isEmpty() || !seen.add(name))
+          continue;
+        if (TemplateRecipes.isCloudOnly(entry))
+        {
+          cloud++;
+          continue;
+        }
+        try
+        {
+          all.add(TemplateRecipes.draft(entry, Json.obj(get("/templates/" + enc(name) + ".json", 15)), defs));
+        }
+        catch (Exception e)
+        {
+          all.add(new TemplateRecipes.Drafted(name, null, List.of("could not be read: " + e.getMessage()), 0));
+        }
+      }
+    all.sort(java.util.Comparator.comparingLong(TemplateRecipes.Drafted::order));
+    long usable = all.stream().filter(TemplateRecipes.Drafted::ok).count();
+    templates = all;
+    templatesStatus = Json.map("state", "read", "usable", usable, "local", all.size(), "cloud", cloud,
+        "at", System.currentTimeMillis());
+    Log.info("comfyui", "ComfyUI templates: " + usable + " of the " + all.size()
+        + " that run on this machine can serve as recipes (" + cloud + " others need a paid cloud service)");
+  }
+
+  /** The usable template recipes, simplest first, except where a recipe of the same id exists or is switched off. */
+  private List<Recipe> templateRecipes(List<Recipe> existing, Set<String> ids)
+  {
+    if (!templatesOn())
+      return List.of();
+    Set<String> taken = new HashSet<>();
+    existing.forEach(r -> taken.add(r.id));
+    for (Map.Entry<String, Map<String, Object>> e : customJson().entrySet())
+      if (Json.bool(e.getValue(), "disabled", false))
+        taken.add(e.getKey());
+    List<Recipe> out = new ArrayList<>();
+    for (TemplateRecipes.Drafted d : templates)
+      if (d.ok() && !taken.contains(Json.str(d.recipe(), "id", "")))
+        try
+        {
+          Recipe r = new Recipe(d.recipe());
+          out.add(r);
+          ids.add(r.id);
+        }
+        catch (Exception e)
+        {
+          Log.debug("comfyui", "template recipe '" + d.template() + "' is unusable: " + e.getMessage());
+        }
+    return out;
+  }
+
+  private Map<String, Map<String, Object>> templateJson()
+  {
+    Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+    if (templatesOn())
+      for (TemplateRecipes.Drafted d : templates)
+        if (d.ok())
+          out.put(Json.str(d.recipe(), "id", ""), d.recipe());
+    return out;
+  }
+
   /**
    * Every recipe there is, for the admin UI: where it comes from ("built-in", "custom" or "custom,
    * replacing the built-in"), whether it is switched off, whether it parses, and its JSON.
@@ -517,6 +655,7 @@ public final class ComfyBridge
   {
     Map<String, Map<String, Object>> built = builtinJson();
     Map<String, Map<String, Object>> custom = customJson();
+    Map<String, Map<String, Object>> fromTemplates = templateJson();
     Set<String> ids = new java.util.TreeSet<>(built.keySet());
     ids.addAll(custom.keySet());
     List<Object> out = new ArrayList<>();
@@ -524,9 +663,10 @@ public final class ComfyBridge
     {
       Map<String, Object> c = custom.get(id);
       boolean off = c != null && Json.bool(c, "disabled", false);
-      Map<String, Object> json = c != null && !off ? c : built.get(id);
+      Map<String, Object> json = c != null && !off ? c : built.containsKey(id) ? built.get(id) : fromTemplates.get(id);
       String source = off ? "switched off" : c == null ? "built-in" : built.containsKey(id)
-          ? "custom, replacing the built-in" : "custom";
+          ? "custom, replacing the built-in" : fromTemplates.containsKey(id)
+          ? "custom, replacing the ComfyUI template" : "custom";
       String error = null;
       String title = id;
       String kind = "";
@@ -542,8 +682,18 @@ public final class ComfyBridge
           error = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
         }
       out.add(Json.map("id", id, "title", title, "kind", kind, "source", source,
-          "builtin", built.containsKey(id), "disabled", off, "error", error, "recipe", json));
+          "builtin", built.containsKey(id), "disabled", off, "error", error, "recipe", json,
+          "template", fromTemplates.containsKey(id) ? Json.str(fromTemplates.get(id), "template", null) : null));
     }
+    // the template recipes nobody has touched, after the rest
+    for (Map.Entry<String, Map<String, Object>> e : fromTemplates.entrySet())
+      if (!ids.contains(e.getKey()))
+      {
+        Map<String, Object> json = e.getValue();
+        out.add(Json.map("id", e.getKey(), "title", Json.str(json, "title", e.getKey()), "kind",
+            Json.str(json, "kind", ""), "source", "ComfyUI template", "builtin", false, "disabled", false,
+            "error", null, "recipe", json, "template", Json.str(json, "template", null)));
+      }
     return out;
   }
 
@@ -645,7 +795,7 @@ public final class ComfyBridge
     List<Object> warnings = new ArrayList<>();
     if (Json.bool(json, "disabled", false))
     {
-      if (!builtinJson().containsKey(id))
+      if (!builtinJson().containsKey(id) && !templateJson().containsKey(id))
         throw new HttpError(400, "'" + id + "' is not a built-in recipe — delete it instead");
       json = Json.map("id", id, "disabled", true);
     }
@@ -697,7 +847,7 @@ public final class ComfyBridge
     if (!RECIPE_ID.matcher(id).matches())
       throw new HttpError(400, "bad recipe id");
     Path file = recipeDir().resolve(id + ".json");
-    boolean builtin = builtinJson().containsKey(id);
+    boolean builtin = builtinJson().containsKey(id) || templateJson().containsKey(id);
     if (!Files.exists(file))
       throw new HttpError(builtin ? 409 : 404, builtin
           ? "'" + id + "' is built in and unchanged — switch it off instead (PUT {\"disabled\": true})"
@@ -797,7 +947,8 @@ public final class ComfyBridge
         "output", outputTail(),
         "activeJobs", active.get(),
         "models", models,
-        "unassigned", s.unassigned());
+        "unassigned", s.unassigned(),
+        "templates", templatesOn() ? templatesStatus : Json.map("state", "switched off"));
   }
 
   // ---- running a job ------------------------------------------------------
@@ -1443,7 +1594,8 @@ public final class ComfyBridge
    */
   private long wantedBytes(Recipe recipe)
   {
-    long mb = recipe.memoryMB > 0 ? recipe.memoryMB : Json.num(conf(), "memoryMB", 24576);
+    long mb = recipe.memoryMB > 0 ? recipe.memoryMB
+        : Math.max(Json.num(conf(), "memoryMB", 24576), recipe.estimatedMemoryMB);
     return mb * 1024L * 1024;
   }
 

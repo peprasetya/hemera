@@ -988,40 +988,65 @@ async function renderComfy(refresh) {
   const output = st && st.output && st.output.length
     ? `<details style="margin-top:8px"><summary class="small muted">ComfyUI's last output</summary>
         <pre class="mono small" style="white-space:pre-wrap;max-height:240px;overflow:auto">${esc(st.output.join("\n"))}</pre></details>` : "";
+  const byId = Object.fromEntries(recipes.map(r => [r.id, r]));
   const rows = models.map(m => `<tr>
       <td data-label="Model" class="mono">${esc(m.id)}</td>
       <td data-label="Makes"><span class="badge warn">${esc(m.kind)}</span></td>
-      <td data-label="Family">${esc(m.title)}</td>
+      <td data-label="Family">${esc(m.title)}${byId[m.recipe] && byId[m.recipe].source === "ComfyUI template"
+        ? '<div class="small muted">from a ComfyUI template</div>' : ""}</td>
       <td data-label="Status">${m.ready ? '<span class="badge ok">offered</span>'
         : `<span class="badge danger">incomplete</span><div class="small muted">${m.problems.map(esc).join("<br>")}</div>`}</td>
     </tr>`).join("");
   const looseRows = loose.map((f, i) => `<tr>
-      <td data-label="File" class="mono">${esc(f.file)}</td>
+      <td data-label="File" class="mono">${esc(f.file)}${(f.templates || []).map(t =>
+        `<div class="small muted" style="font-family:inherit">ComfyUI template “${esc(t.title)}” fits, but: ${t.problems.map(esc).join("; ")}</div>`).join("")}</td>
       <td data-label="Use as"><div class="row"><select data-comfy-recipe="${i}">
         ${f.recipes.map(r => `<option>${esc(r)}</option>`).join("")}</select>
         <button class="btn xs" data-comfy-assign="${i}">Assign</button>
         <button class="btn xs" data-comfy-hide="${i}">Hide</button></div></td>
     </tr>`).join("");
-  const recipeRows = recipes.map((r, i) => {
+  const recipeRow = (r) => {
+    const i = recipes.indexOf(r);
     const used = models.filter(m => m.recipe === r.id).length;
+    const original = r.builtin || !!r.template;
     const act = r.disabled ? `<button class="btn xs" data-recipe-restore="${i}">Switch on</button>`
-      : `<button class="btn xs" data-recipe-edit="${i}">Edit</button>` + (r.source === "built-in"
+      : `<button class="btn xs" data-recipe-edit="${i}">Edit</button>` + (r.source === "built-in" || r.source === "ComfyUI template"
         ? ` <button class="btn xs danger" data-recipe-off="${i}">Switch off</button>`
-        : ` <button class="btn xs danger" data-recipe-del="${i}">${r.builtin ? "Revert" : "Delete"}</button>`);
+        : ` <button class="btn xs danger" data-recipe-del="${i}">${original ? "Revert" : "Delete"}</button>`);
     return `<tr>
-      <td data-label="Recipe" class="mono">${esc(r.id)}${r.error ? `<div class="small" style="color:var(--danger)">${esc(r.error)}</div>` : ""}</td>
+      <td data-label="Recipe" class="mono">${esc(r.template ? r.title : r.id)}${r.template ? `<div class="small muted">${esc(r.id)}</div>` : ""}${r.error ? `<div class="small" style="color:var(--danger)">${esc(r.error)}</div>` : ""}</td>
       <td data-label="Makes">${r.kind ? `<span class="badge warn">${esc(r.kind)}</span>` : ""}</td>
       <td data-label="Source">${esc(r.source)}</td>
       <td data-label="Models">${r.disabled ? "" : used}</td>
       <td data-label="">${act}</td>
     </tr>`;
-  }).join("");
+  };
+  // ComfyUI's own templates number in the hundreds: the ones in use first, all of them folded away
+  const fromTemplate = (r) => r.source === "ComfyUI template";
+  const inUse = (r) => models.some(m => m.recipe === r.id);
+  const recipeRows = recipes.filter(r => !fromTemplate(r)).map(recipeRow).join("");
+  const tplRecipes = recipes.filter(fromTemplate).sort((a, b) => inUse(b) - inUse(a) || a.title.localeCompare(b.title));
+  const tplState = st && st.templates;
+  const tplLine = !tplState ? ""
+    : tplState.state === "read" ? `${tplState.usable} of the ${tplState.local} templates that run on this machine can serve as recipes; ${tplRecipes.filter(inUse).length} are in use.`
+    : tplState.state === "switched off" ? "Switched off (comfyui.templates is false)."
+    : tplState.state === "unavailable" ? `Not available from this ComfyUI: ${esc(tplState.error || "")}`
+    : "Not read yet — hemera reads them once ComfyUI is running.";
+  const tplBlock = `<details style="margin-top:12px"${tplRecipes.some(inUse) ? " open" : ""}>
+      <summary><strong>From ComfyUI's workflow templates</strong> <span class="small muted">${tplLine}</span></summary>
+      <p class="small muted">ComfyUI ships workflow templates for the models it supports, each naming the files it needs.
+      hemera turns each one that can run unattended (one result, at most one image in) into a recipe, and uses it for
+      files no recipe above claims. Edit one to keep your own version of it.</p>
+      ${tplRecipes.length ? `<div class="tablewrap"><table class="stack">
+        <tr><th>Template</th><th>Makes</th><th>Source</th><th>Models</th><th></th></tr>${tplRecipes.map(recipeRow).join("")}</table></div>` : ""}
+    </details>`;
   paint(el, `
     <h2>ComfyUI</h2>
     <div class="card">
       <p class="small muted">Image, video and 3D models that live in a ComfyUI install. hemera asks ComfyUI which
-      model files and nodes it has and offers every model it has a workflow for — nothing is installed into ComfyUI,
-      and a file added to its folders appears here by itself.</p>
+      model files and nodes it has and offers every model a recipe covers — hemera's built-in recipes, your own, and
+      ComfyUI's own workflow templates. Nothing is installed into ComfyUI, and a file of a known family added to its
+      folders appears here by itself.</p>
       <div class="formgrid">
         <div><label>ComfyUI folder (the one containing main.py) — hemera starts it when needed</label>
           <input type="text" id="comfy-dir" class="mono" value="${esc(c.dir || "")}" placeholder="/path/to/ComfyUI"></div>
@@ -1043,9 +1068,10 @@ async function renderComfy(refresh) {
       <div class="tablewrap"><table class="stack">
         <tr><th>Recipe</th><th>Makes</th><th>Source</th><th>Models</th><th></th></tr>${recipeRows}</table></div>
       <div class="row" style="margin-top:8px"><button class="btn" id="recipe-new">New recipe</button></div>
+      ${tplBlock}
       ${looseRows ? `<h3 style="margin-top:16px">Not recognised</h3>
-        <p class="small muted">Model files whose name matches no workflow. If one is a variant of a family hemera
-        knows, say which.</p>
+        <p class="small muted">Model files no recipe recognises, and no ComfyUI template either. If one is a variant
+        of a family hemera knows, say which; otherwise make a recipe for it from a workflow that runs it.</p>
         <div class="tablewrap"><table class="stack"><tr><th>File</th><th>Use as</th></tr>${looseRows}</table></div>` : ""}
     </div>`);
   const save = async (msg) => {
@@ -1097,8 +1123,9 @@ async function renderComfy(refresh) {
     done(DEL("/hemera/api/comfyui/recipes/" + encodeURIComponent(recipes[+b.dataset.recipeRestore].id)), "Recipe switched on"));
   $$("[data-recipe-del]", el).forEach(b => b.onclick = () => {
     const r = recipes[+b.dataset.recipeDel];
-    if (confirm(r.builtin ? "Drop your changes to '" + r.id + "' and use the built-in again?" : "Delete recipe '" + r.id + "'?"))
-      done(DEL("/hemera/api/comfyui/recipes/" + encodeURIComponent(r.id)), r.builtin ? "Back to the built-in" : "Recipe deleted");
+    const original = r.builtin || !!r.template;
+    if (confirm(original ? "Drop your changes to '" + r.id + "' and use the " + (r.builtin ? "built-in" : "ComfyUI template") + " again?" : "Delete recipe '" + r.id + "'?"))
+      done(DEL("/hemera/api/comfyui/recipes/" + encodeURIComponent(r.id)), original ? "Back to the original" : "Recipe deleted");
   });
   $("#recipe-new").onclick = () => editRecipe(null);
 }
@@ -1201,6 +1228,7 @@ async function editRecipe(r) {
         : "";
       card.innerHTML = `<h2>${isNew ? "New recipe" : "Edit recipe — " + esc(rec.id)}</h2>
         ${r && r.builtin ? `<p class="small muted">Built in: saving stores your version beside it, and <em>Revert</em> brings the original back.</p>` : ""}
+        ${r && r.template && !r.builtin ? `<p class="small muted">Drafted from ComfyUI's template “${esc(r.template)}”: saving stores your version, used instead of it, and <em>Revert</em> brings the template's back.</p>` : ""}
         ${notes.length ? `<ul class="small" style="color:var(--accent);margin:6px 0 0 18px">${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
         ${importBox}
         <div class="rc-sec"><h3>About</h3>
