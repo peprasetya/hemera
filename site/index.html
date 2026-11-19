@@ -35,7 +35,7 @@
   <!-- ======================= HERO ======================= -->
   <div class="hero">
     <div class="wrap">
-      <a class="pill" href="https://github.com/peprasetya/hemera/releases/latest"><b>RELEASE</b> 20261118 · speech on the NPU, memory sized per recipe →</a>
+      <a class="pill" href="https://github.com/peprasetya/hemera/releases/latest"><b>RELEASE</b> 20261119 · ComfyUI's own templates as recipes →</a>
       <h1>Every engine. Every version.<br><span class="grad">One endpoint.</span></h1>
       <p class="lede">
         Hemera is a small, open-source router for local AI. It keeps many engine binaries — and many
@@ -270,7 +270,7 @@
       <div class="steps">
         <div class="step reveal"><h3>Point at it</h3><p>Tell hemera where ComfyUI is. Nothing is installed into it and none of its files are touched.</p></div>
         <div class="step reveal"><h3>Hemera looks</h3><p>It asks ComfyUI which model files and nodes it has. A new file of a family it knows is offered within half a minute.</p></div>
-        <div class="step reveal"><h3>Recipes match</h3><p>A recipe — the workflow, and which input is the prompt, seed, size or image — turns a family of files into a model. Only families with a recipe are offered.</p></div>
+        <div class="step reveal"><h3>Recipes match</h3><p>A recipe — the workflow, and which input is the prompt, seed, size or image — turns a family of files into a model. Hemera brings its own, and makes more from the workflow templates ComfyUI ships.</p></div>
         <div class="step reveal"><h3>Requests run</h3><p>An OpenAI-shaped request fills the workflow and returns the image, the mp4 or the <code>.glb</code> — with progress and cancel.</p></div>
       </div>
       <div class="split" style="align-items:start">
@@ -285,6 +285,7 @@
         </div>
         <div class="reveal">
           <ul class="checks" style="margin-top:0">
+            <li><b>ComfyUI's templates, as models.</b> Download a model with one of ComfyUI's own workflow templates and hemera offers it — the template becomes its recipe, checked against your ComfyUI.</li>
             <li><b>Your own workflow, as a model.</b> Export it from ComfyUI, press <strong>New recipe</strong>, and hemera works out which inputs are the prompt, the seed, the size or the image.</li>
             <li><b>A form, not JSON.</b> See live which files each recipe matches; turn any node input into a setting clients may change.</li>
             <li><b>Room for every job.</b> Each recipe knows how much memory it needs, and hemera makes room before the job starts.</li>
@@ -299,7 +300,7 @@
         </div>
       </div>
       <div class="honest reveal">
-        <b>Each family needs a recipe.</b> A model file alone does not tell hemera how to run it: ComfyUI runs whole workflows, and which nodes a file needs lives in workflows, not in the file. So hemera offers a ComfyUI model only when a recipe covers its family. The built-in recipes cover the eight families above; any other model needs one recipe, made once from a workflow that runs it in ComfyUI. Files no recipe recognises are listed in the web UI, never offered by guesswork.
+        <b>Each family needs a recipe.</b> A model file alone does not tell hemera how to run it: ComfyUI runs whole workflows, and which nodes a file needs lives in workflows, not in the file. So hemera offers a ComfyUI model only when a recipe covers its family. The built-in recipes cover the eight families above, and ComfyUI's own workflow templates cover many more — on ComfyUI 0.42, 163 of its 254 local templates convert into recipes. Templates that take several images, video or audio, or that make audio, are left out. Any other model needs one recipe, made once from a workflow that runs it in ComfyUI. Files no recipe recognises are listed in the web UI, never offered by guesswork.
       </div>
     </div>
   </section>

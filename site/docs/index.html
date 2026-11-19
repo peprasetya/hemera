@@ -70,6 +70,7 @@
           <ol>
             <li><a href="#comfy-setup">Setup</a></li>
             <li><a href="#recipes">Recipes</a></li>
+            <li><a href="#templates">Templates</a></li>
             <li><a href="#comfy-memory">Memory and recovery</a></li>
           </ol>
         </li>
@@ -300,7 +301,7 @@ WARN  [instance] 'qwen3-coder' may fall back to CPU: 3 libraries not found
         <h2>ComfyUI bridge</h2>
         <p class="section-lede">Some models only run as a ComfyUI workflow — the 3D ones, and video models newer than stable-diffusion.cpp supports. Hemera fronts ComfyUI over the same HTTP API ComfyUI's own page uses: nothing is installed into it and none of its files are touched.</p>
 
-        <div class="callout"><b>Hemera offers a ComfyUI model only when a recipe covers its family.</b> ComfyUI has no "run this file" call — it runs whole workflows — and a model file does not say which nodes it needs. The built-in recipes cover TRELLIS.2, Pixal3D, Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain and turbo) and Qwen-Image (and 2.1 Turbo). For any other model, make a recipe once from a workflow that runs it (see <a href="#recipes">Recipes</a>); after that every file of that family is picked up by itself. Files no recipe recognises are listed under <i>Not recognised</i> in the Directories tab.</div>
+        <div class="callout"><b>Hemera offers a ComfyUI model only when a recipe covers its family.</b> ComfyUI has no "run this file" call — it runs whole workflows — and a model file does not say which nodes it needs. The built-in recipes cover TRELLIS.2, Pixal3D, Hunyuan3D 2.1, LTX-2.5, MiniMax H3 (plain and turbo) and Qwen-Image (and 2.1 Turbo), and hemera makes more from the workflow templates ComfyUI ships (see <a href="#templates">Templates</a>). For any other model, make a recipe once from a workflow that runs it (see <a href="#recipes">Recipes</a>); after that every file of that family is picked up by itself. Files no recipe recognises are listed under <i>Not recognised</i> in the Directories tab.</div>
 
         <h3 id="comfy-setup">Setup</h3>
         <ol class="steps-list">
@@ -327,6 +328,7 @@ WARN  [instance] 'qwen3-coder' may fall back to CPU: 3 libraries not found
               <tr><td><code>stallSeconds</code></td><td>900 image, 1800 video/3D</td><td>Silence after which a job counts as hung.</td></tr>
               <tr><td><code>cancelSeconds</code></td><td><code>15</code></td><td>How long a cancelled job may keep running before ComfyUI is killed to free the GPU.</td></tr>
               <tr><td><code>exclusiveGpu</code></td><td><code>false</code></td><td>Unload every other engine before a ComfyUI job, and stop an idle ComfyUI before another engine loads.</td></tr>
+              <tr><td><code>templates</code></td><td><code>true</code></td><td>Use ComfyUI's workflow templates as recipes.</td></tr>
               <tr><td><code>assign</code></td><td><code>{}</code></td><td>File name → recipe id, for checkpoints no pattern recognises.</td></tr>
             </tbody>
           </table>
@@ -342,6 +344,15 @@ WARN  [instance] 'qwen3-coder' may fall back to CPU: 3 libraries not found
           <li>Save. Hemera checks the recipe parses and its output exists, and warns about nodes ComfyUI lacks.</li>
         </ol>
         <p>A built-in you edit is stored as your own version — <b>Revert</b> brings the original back, <b>Switch off</b> hides it. Recipes are plain files in <code>&lt;home&gt;/comfyui/&lt;id&gt;.json</code>, and the same actions are available over HTTP: <code>GET /hemera/api/comfyui/recipes</code>, <code>PUT</code>/<code>DELETE …/recipes/{id}</code>, <code>POST …/recipes/draft</code> and <code>POST …/recipes/check</code>.</p>
+
+        <h3 id="templates">Templates</h3>
+        <p>ComfyUI ships its authors' workflow templates for the models it supports, and each local one names the files it needs and where to download them. Hemera reads them from ComfyUI (<code>/templates/</code>) whenever ComfyUI's version or nodes change, converts each from the editor's format to the API format against ComfyUI's own node definitions, and drafts a recipe from it the way <b>New recipe</b> does. A template that does not line up exactly is left out, with the reason, rather than guessed at. On ComfyUI 0.42, 163 of the 254 local templates convert.</p>
+        <ul>
+          <li><b>What is taken.</b> Templates that can run from a request: one image, video or 3D result, at most one image in, no video or audio in, no paid cloud service. They offer the settings every client knows — prompt, negative prompt, seed, steps, cfg, size, frames, fps, image. Everything else stays as the template's authors set it; a 3D template's sampling stages keep their own steps while one seed reaches all of them.</li>
+          <li><b>Never in the way.</b> Template recipes come after every other recipe: they only take files no built-in or own recipe claims, so they never change what an existing model is or how it runs. When several templates name the same file, the one that needs no picture wins for images and video, the one that takes one for 3D, then the one ComfyUI's users run most.</li>
+          <li><b>Memory is a guess.</b> Twice what the template downloads, which can only raise <code>memoryMB</code>, never lower it. Measure a big one and set its <code>memoryMB</code> in an edited copy.</li>
+        </ul>
+        <p>They are listed in the Directories tab under <i>From ComfyUI's workflow templates</i>: <b>Edit</b> keeps your own version, <b>Switch off</b> hides one, and <code>"comfyui": {"templates": false}</code> turns them all off.</p>
 
         <h3 id="comfy-memory">Memory and recovery</h3>
         <ul>
