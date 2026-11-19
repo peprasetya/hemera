@@ -1,9 +1,11 @@
 # hemera OCR API: text in pictures, with where it is
 
 This is for a client that shows the text in a picture as text a person can select, copy or look
-up. Spatiand's SpatiLoupe (Live Text) and the paused frames of SpatiReel are the first. hemera
-reads the picture and says where each line, word and character is. It stops there: translating
-the text, or answering questions about it, goes to `/v1/chat/completions` like any other text.
+up. Spatiand's SpatiLoupe (Live Text) and the paused frames of SpatiReel are the first. The OCR
+engine reads the picture and says where each line, word and character is. It stops there:
+translating the text, or answering questions about it, goes to `/v1/chat/completions` like any
+other text. The engine, ocr-server, is a separate program: it answers this API itself, and hemera
+starts it and passes requests and answers through unchanged.
 
 - **Base URL:** `http://<host>:12434`. There is no authentication. CORS is open, as for the rest
   of hemera ([media-api.md](media-api.md)).
@@ -109,7 +111,7 @@ All are optional. The defaults are `{"languages": ["auto"], "granularity": "char
 | field | meaning |
 |---|---|
 | `orientation` | How far the picture's text is turned clockwise (0, 90, 180, 270), as found or as given. |
-| `timing_ms` | `total` is hemera's whole answer; the rest are the engine's steps. |
+| `timing_ms` | `total` is the engine's whole answer, from the request arriving; the rest are its steps. A model that had to load first adds that time outside `total`. |
 | `text` | All the text in reading order: lines joined by `\n`, blocks by `\n\n`. No text gives `""` and no blocks, with status 200. |
 | `blocks` | Paragraphs, columns, a form's rows, in reading order: columns, then lines. A form's labels and values, and a receipt's items and prices, are read row by row. |
 | `line.polygon` | Four points, clockwise, starting at the line's own top-left in its reading direction (see below). |
@@ -156,7 +158,8 @@ two pictures at once; a third waits for one of them.
 
 ### How long it takes
 
-On deepmagpie, warm (see [tools/ocr-bench/RESULTS.md](../tools/ocr-bench/RESULTS.md)):
+On deepmagpie, warm. The whole benchmark is the engine's `bench/RESULTS.md`, on deepmagpie in
+`/media/shared/AIModels/ocr/server/bench/`.
 
 | picture | time |
 |---|---|
@@ -172,15 +175,15 @@ sending only the `region` that matters saves time.
 
 ## 3. Setting it up (hemera.json)
 
-The engine is `engines/ocr/ocr_server.py`, a Python process on ONNX Runtime (CPU). It needs
-numpy, opencv-python-headless, onnxruntime, pillow and pyyaml, and the PaddleOCR ONNX models:
-- `PP-OCRv6_medium_det_onnx` and `PP-OCRv6_medium_rec_onnx`;
-- `korean_`, `arabic_`, `th_`, `devanagari_`, `cyrillic_`, `el_`, `ta_` and
-  `te_PP-OCRv5_mobile_rec_onnx`;
-- `PP-LCNet_x1_0_doc_ori_onnx` and `PP-LCNet_x1_0_textline_ori_onnx`.
-
-Each goes in its own directory under one models directory, and each holds `inference.onnx` and
-`inference.yml`.
+The engine is ocr-server, a separate project. On deepmagpie it is at
+`/media/shared/AIModels/ocr/server`, and its README has the whole setup:
+- a Python 3.13 venv with numpy, ONNX Runtime, OpenCV (headless), Pillow, PyYAML and `regex`;
+- PaddleOCR's ONNX models, 221 MB. Each comes from huggingface.co/PaddlePaddle at a fixed
+  revision, checked by sha256. All are Apache-2.0:
+  - `PP-OCRv6_medium_det_onnx` and `PP-OCRv6_medium_rec_onnx`;
+  - `korean_`, `arabic_`, `th_`, `devanagari_`, `cyrillic_`, `el_`, `ta_` and
+    `te_PP-OCRv5_mobile_rec_onnx`;
+  - `PP-LCNet_x1_0_doc_ori_onnx` and `PP-LCNet_x1_0_textline_ori_onnx`.
 
 ```json
 "engines": {
@@ -189,12 +192,12 @@ Each goes in its own directory under one models directory, and each holds `infer
     "argStyle": "custom",
     "healthPath": "/health",
     "gpu": false,
-    "defaultArgs": ["-I", "/media/shared/AIModels/ocr/engine/ocr_server.py", "--port", "{port}", "--models", "{file}"]
+    "defaultArgs": ["-I", "/media/shared/AIModels/ocr/server/ocr_server.py", "--port", "{port}", "--models", "{file}"]
   }
 },
 "models": [
   { "name": "pp-ocrv6", "engine": "hemera-ocr", "task": "ocr", "file": "/media/shared/AIModels/ocr/models",
-    "args": ["--threads", "8", "--workers", "2"], "keepAliveSeconds": 900,
+    "args": ["--threads", "8", "--workers", "2", "--name", "pp-ocrv6"], "keepAliveSeconds": 900,
     "scripts": ["Latn", "Hani", "Jpan", "Hang", "Arab", "Thai", "Deva", "Cyrl", "Grek", "Taml", "Telu"],
     "charBoxes": "exact", "licence": "Apache-2.0 (PaddleOCR models)" }
 ],
@@ -204,6 +207,12 @@ Each goes in its own directory under one models directory, and each holds `infer
 
 - **`task: "ocr"`:** makes a model an OCR model. `ocrModel` names the default; without it, the
   first OCR model is the default.
+- **What hemera does:** it reads one thing of a request, the options' `model`, to know where it
+  goes. It also refuses a request over 50 MB, waits up to `ocrLoadWaitSeconds` (10) for the
+  engine to start, gives up after `ocrTimeoutSeconds`, and stops the engine's work when the
+  client hangs up.
+- **What the engine does:** everything else: the checks, the reading, and the answer.
+- **`--name`:** the model name the answers carry.
 - **`--workers`:** how many pictures are read at once; each gets `--threads` threads.
 - **`--det` and `--rec`:** choose other PP-OCR models, for example `PP-OCRv6_small_det` and
   `PP-OCRv6_small_rec`, which are twice as fast and read Latin worse.

@@ -11,8 +11,11 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -20,9 +23,16 @@ import java.util.concurrent.CompletableFuture;
 import ing.aether.hemera.json.Json;
 
 /**
- * POST and GET /v1/ocr, against a real hemera and a fake OCR engine (fake_ocr_engine.py): the
- * answer's shape (grapheme clusters, words, polygons, the text in reading order), the errors,
- * and that a client hanging up stops the engine's work. Run it with tests/ocr/run.sh.
+ * POST and GET /v1/ocr, against a real hemera and a fake OCR engine (fake_ocr_engine.py). The
+ * engine answers the API itself; these check what hemera does:
+ * - it picks the model and starts its engine;
+ * - it passes the request and the answer through unchanged;
+ * - it refuses what is too large, and waits out a start;
+ * - it reads two pictures at once;
+ * - it stops the engine's work when the client hangs up or the reading takes too long;
+ * - it never logs the text.
+ * The answer's shape is checked with the engine (ocr-server's tests/test_answer.py). Run it with
+ * tests/ocr/run.sh.
  */
 public class OcrApiTest
 {
@@ -31,6 +41,7 @@ public class OcrApiTest
   private static String base;
   private static int port;
   private static Path dir;
+  private static Path engineDir;
   private static int failures;
   private static int checks;
 
@@ -38,6 +49,7 @@ public class OcrApiTest
   {
     dir = Path.of(args[0]).toAbsolutePath();
     Path engine = Path.of(args[1]).toAbsolutePath();
+    engineDir = engine.getParent();
     port = freePort();
     base = "http://127.0.0.1:" + port;
     Files.writeString(dir.resolve("hemera.json"), config(engine));
@@ -45,15 +57,18 @@ public class OcrApiTest
     try
     {
       waitUp();
+      send("/hemera/api/loglevel", "{\"level\":\"trace\"}"); // the text must stay out of even a trace
       describe();
-      shape();
-      granularities();
+      passThrough();
       requestErrors();
-      engineTooLarge();
+      engineErrors();
       loading();
       twoAtOnce();
       timeout();
       hangUp();
+      String log = Files.readString(dir.resolve("hemera.log"));
+      check("the text is not in hemera's log, even at trace level", !log.contains("NIK 3171") && !log.contains("Café"),
+          "see " + dir.resolve("hemera.log"));
     }
     finally
     {
@@ -78,84 +93,41 @@ public class OcrApiTest
     check("GET: max_pixels", num(m.get("max_pixels")) == 50_000_000, r.body());
     check("GET: max_bytes", num(m.get("max_bytes")) == 52_428_800, r.body());
     List<Object> models = Json.arr(m.get("models"));
-    check("GET: every OCR model listed", models.size() == 4, r.body());
+    check("GET: every OCR model listed", models.size() == 6, r.body());
     Map<String, Object> fast = Json.obj(models.get(0));
     check("GET: model fields", "ocr-fast".equals(fast.get("name")) && List.of("Latn").equals(fast.get("scripts"))
         && "exact".equals(fast.get("char_boxes")) && "test".equals(fast.get("licence")) && fast.get("ready") instanceof Boolean, r.body());
   }
 
-  private static void shape() throws Exception
+  private static void passThrough() throws Exception
   {
-    HttpResponse<String> r = ready("{\"languages\":[\"id\",\"en\"],\"granularity\":\"chars\",\"region\":null,"
-        + "\"orientation\":\"auto\",\"model\":null}");
-    check("POST answers 200", r.statusCode() == 200, r.body());
-    Map<String, Object> m = Json.parseObj(r.body());
-    check("version 1, model named", num(m.get("version")) == 1 && "ocr-fast".equals(m.get("model")), r.body());
-    Map<String, Object> image = Json.obj(m.get("image"));
-    check("image size", num(image.get("width")) == 400 && num(image.get("height")) == 300, r.body());
-    check("orientation", num(m.get("orientation")) == 0, r.body());
-    Map<String, Object> timing = Json.obj(m.get("timing_ms"));
-    check("timing_ms: hemera's total and the engine's parts", timing.get("total") instanceof Number && timing.containsKey("detect"),
-        r.body());
-    String latin = "Café 👍🏽 ok";
-    check("text: lines joined by \\n, blocks by \\n\\n", (latin + "\nNIK 3171\n\nمرحبا 15").equals(m.get("text")),
-        String.valueOf(m.get("text")));
-    List<Object> blocks = Json.arr(m.get("blocks"));
-    check("two blocks, each with its polygon", blocks.size() == 2 && Json.arr(Json.obj(blocks.get(0)).get("polygon")).size() == 4,
-        r.body());
-    Map<String, Object> line = Json.obj(Json.arr(Json.obj(blocks.get(0)).get("lines")).get(0));
-    check("line fields", latin.equals(line.get("text")) && "ltr".equals(line.get("direction")) && "Latn".equals(line.get("script"))
-        && "en".equals(line.get("language")) && line.get("confidence") instanceof Number && line.get("angle") instanceof Number
-        && Json.arr(line.get("polygon")).size() == 4, r.body());
-    List<Object> chars = Json.arr(line.get("chars"));
-    check("chars: one per grapheme cluster (e + U+0301 is one, a thumb with its skin tone is one)", chars.size() == 9,
-        String.valueOf(chars));
-    check("chars: a cluster spans its code points", span(chars.get(3), 30, 50) && span(chars.get(5), 60, 80), String.valueOf(chars));
-    check("chars_estimated false", Boolean.FALSE.equals(line.get("chars_estimated")), r.body());
-    List<Object> words = Json.arr(line.get("words"));
-    check("three words", words.size() == 3, String.valueOf(words));
-    Map<String, Object> w0 = Json.obj(words.get(0)), w1 = Json.obj(words.get(1)), w2 = Json.obj(words.get(2));
-    check("words: text and grapheme indices", "Café".equals(w0.get("text")) && num(w0.get("start")) == 0 && num(w0.get("end")) == 4
-        && num(w1.get("start")) == 5 && num(w1.get("end")) == 6 && "ok".equals(w2.get("text")) && num(w2.get("start")) == 7
-        && num(w2.get("end")) == 9, String.valueOf(words));
-    check("words: confidence from their own characters", Math.abs(dbl(w0.get("confidence")) - 0.6) < 1e-9
-        && Math.abs(dbl(w1.get("confidence")) - 1.0) < 1e-9, String.valueOf(words));
-    check("words: polygon along the line", polygon(w0.get("polygon"), 0, 0, 50, 0, 50, 10, 0, 10), String.valueOf(w0.get("polygon")));
-    Map<String, Object> rtl = Json.obj(Json.arr(Json.obj(blocks.get(1)).get("lines")).get(0));
-    List<Object> rw = Json.arr(rtl.get("words"));
-    check("right to left: a word's polygon starts at its top-right", "rtl".equals(rtl.get("direction")) && rw.size() == 2
-        && polygon(Json.obj(rw.get(1)).get("polygon"), 220, 100, 220, 110, 200, 110, 200, 100), String.valueOf(rw));
+    String options = "{\"languages\":[\"id\",\"en\"],\"granularity\":\"chars\",\"model\":null}";
+    HttpResponse<byte[]> r = null;
+    for (int i = 0; i < 40; i++)
+    {
+      r = HTTP.send(request(png(), options), HttpResponse.BodyHandlers.ofByteArray());
+      if (r.statusCode() != 503)
+        break;
+      Thread.sleep(250);
+    }
+    byte[] expected = Files.readAllBytes(engineDir.resolve("fake_answer.json"));
+    check("POST answers 200", r.statusCode() == 200, r.statusCode() + "");
+    check("the engine's answer passes through byte for byte", Arrays.equals(r.body(), expected),
+        new String(r.body(), StandardCharsets.UTF_8));
+    check("with the engine's Content-Type", r.headers().firstValue("Content-Type").orElse("").startsWith("application/json"),
+        r.headers().toString());
+    String sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(multipart(png(), options)));
     String log = Files.readString(dir.resolve("fast.log"));
-    check("the engine gets the languages and orientation", log.contains("\"languages\": [\"id\", \"en\"]") || log.contains(
-        "\"languages\":[\"id\",\"en\"]"), log);
-  }
-
-  private static void granularities() throws Exception
-  {
-    Map<String, Object> lines = line0(post(png(), "{\"granularity\":\"lines\"}", null));
-    check("granularity lines: no words, no chars", !lines.containsKey("words") && !lines.containsKey("chars"), String.valueOf(lines));
-    Map<String, Object> words = line0(post(png(), "{\"granularity\":\"words\"}", null));
-    check("granularity words: words, no chars", words.containsKey("words") && !words.containsKey("chars"), String.valueOf(words));
-    String asFile = new String(multipart(png(), null), StandardCharsets.ISO_8859_1).replace("name=\"image\"", "name=\"file\"");
-    HttpResponse<String> r = HTTP.send(HttpRequest.newBuilder(URI.create(base + "/v1/ocr"))
-        .header("Content-Type", "multipart/form-data; boundary=" + BOUNDARY)
-        .POST(HttpRequest.BodyPublishers.ofByteArray(asFile.getBytes(StandardCharsets.ISO_8859_1))).build(), HttpResponse.BodyHandlers.ofString());
-    check("the picture may come as 'file', as for hemera's other uploads", r.statusCode() == 200, r.statusCode() + " " + r.body());
+    check("the request reaches the engine byte for byte, with its Content-Type", log.contains("body-sha256 " + sha)
+        && log.contains("type multipart/form-data; boundary=" + BOUNDARY), log);
+    HttpResponse<String> s = ready("{\"model\":\"ocr-words\"}");
+    check("the options' model picks the engine", s.statusCode() == 200 && Files.exists(dir.resolve("words.log")),
+        s.statusCode() + " " + s.body());
   }
 
   private static void requestErrors() throws Exception
   {
-    HttpResponse<String> r = HTTP.send(HttpRequest.newBuilder(URI.create(base + "/v1/ocr")).header("Content-Type", "application/json")
-        .POST(HttpRequest.BodyPublishers.ofString("{}")).build(), HttpResponse.BodyHandlers.ofString());
-    error("not multipart", r, 400);
-    error("no image part", post(null, "{}", null), 400);
-    error("not a picture", post("hello, this is text".getBytes(StandardCharsets.UTF_8), null, null), 400);
-    error("options not JSON", post(png(), "{languages", null), 400);
-    error("languages not a list", post(png(), "{\"languages\":\"en\"}", null), 400);
-    error("granularity unknown", post(png(), "{\"granularity\":\"letters\"}", null), 400);
-    error("region not positive", post(png(), "{\"region\":[0,0,-5,5]}", null), 400);
-    error("orientation not a quarter turn", post(png(), "{\"orientation\":45}", null), 400);
-    error("model unknown", post(png(), "{\"model\":\"no-such-model\"}", null), 400);
+    error("a model that is not an OCR model here", post(png(), "{\"model\":\"no-such-model\"}"), 400);
     // too large: refused on the declared length, before the body is read
     String head = "POST /v1/ocr HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: multipart/form-data; boundary=x\r\n"
         + "Content-Length: 60000000\r\n\r\n";
@@ -169,16 +141,19 @@ public class OcrApiTest
     }
   }
 
-  private static void engineTooLarge() throws Exception
+  private static void engineErrors() throws Exception
   {
-    HttpResponse<String> r = ready("{\"model\":\"ocr-huge\"}");
+    HttpResponse<String> r = ready("{\"model\":\"ocr-bad\"}");
+    error("the engine's 400 passes through", r, 400);
+    check("with the engine's message", r.body().contains("granularity must be"), r.body());
+    r = ready("{\"model\":\"ocr-huge\"}");
     error("too many pixels (the engine's 413 passes through)", r, 413);
     check("too many pixels: says the limit", r.body().contains("50000000"), r.body());
   }
 
   private static void loading() throws Exception
   {
-    HttpResponse<String> r = post(png(), "{\"model\":\"ocr-lazy\"}", null);
+    HttpResponse<String> r = post(png(), "{\"model\":\"ocr-lazy\"}");
     error("while the model loads", r, 503);
     check("while the model loads: Retry-After", r.headers().firstValue("Retry-After").isPresent(), r.headers().toString());
     Thread.sleep(3500);
@@ -202,7 +177,7 @@ public class OcrApiTest
   private static void timeout() throws Exception
   {
     long t0 = System.nanoTime();
-    HttpResponse<String> r = post(png(), "{\"model\":\"ocr-slow\"}", null);
+    HttpResponse<String> r = post(png(), "{\"model\":\"ocr-slow\"}");
     long ms = (System.nanoTime() - t0) / 1_000_000;
     error("longer than ocrTimeoutSeconds", r, 504);
     check("504 after about ocrTimeoutSeconds", ms >= 2500 && ms < 6000, ms + " ms");
@@ -240,10 +215,10 @@ public class OcrApiTest
         break;
       }
     List<Object> models = new ArrayList<>();
-    for (String mode : List.of("fast", "slow", "lazy", "huge"))
+    for (String mode : List.of("fast", "slow", "lazy", "huge", "bad", "words"))
       models.add(Json.map("name", "ocr-" + mode, "engine", "fake-ocr", "task", "ocr", "scripts", List.of("Latn"),
           "licence", "test", "keepAliveSeconds", 300,
-          "args", List.of("--mode", mode, "--log", dir.resolve(mode + ".log").toString())));
+          "args", List.of("--mode", mode.equals("words") ? "fast" : mode, "--log", dir.resolve(mode + ".log").toString())));
     return Json.write(Json.map("port", port, "ocrModel", "ocr-fast", "ocrTimeoutSeconds", 3, "ocrLoadWaitSeconds", 1,
         "engines", Json.map("fake-ocr", Json.map("binaryPath", python, "argStyle", "custom", "healthPath", "/health", "gpu", false,
             "defaultArgs", List.of(engine.toString(), "--port", "{port}"))),
@@ -283,7 +258,7 @@ public class OcrApiTest
     HttpResponse<String> r = null;
     for (int i = 0; i < 40; i++)
     {
-      r = post(png(), options, null);
+      r = post(png(), options);
       if (r.statusCode() != 503)
         return r;
       Thread.sleep(250);
@@ -291,9 +266,15 @@ public class OcrApiTest
     return r;
   }
 
-  private static HttpResponse<String> post(byte[] image, String options, String contentType) throws Exception
+  private static HttpResponse<String> post(byte[] image, String options) throws Exception
   {
     return HTTP.send(request(image, options), HttpResponse.BodyHandlers.ofString());
+  }
+
+  private static void send(String path, String json) throws Exception
+  {
+    HTTP.send(HttpRequest.newBuilder(URI.create(base + path)).header("Content-Type", "application/json")
+        .POST(HttpRequest.BodyPublishers.ofString(json)).build(), HttpResponse.BodyHandlers.ofString());
   }
 
   private static CompletableFuture<HttpResponse<String>> postAsync(String options) throws IOException
@@ -330,12 +311,6 @@ public class OcrApiTest
   {
     return new byte[] { (byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R', 0, 0, 1, (byte) 0x90,
         0, 0, 1, 0x2c, 8, 2, 0, 0, 0 };
-  }
-
-  private static Map<String, Object> line0(HttpResponse<String> r)
-  {
-    Map<String, Object> m = Json.parseObj(r.body());
-    return Json.obj(Json.arr(Json.obj(Json.arr(m.get("blocks")).get(0)).get("lines")).get(0));
   }
 
   private static void error(String what, HttpResponse<String> r, int status)
@@ -389,34 +364,9 @@ public class OcrApiTest
     return false;
   }
 
-  private static boolean span(Object o, double s, double e)
-  {
-    List<Object> p = Json.arr(o);
-    return p.size() == 2 && dbl(p.get(0)) == s && dbl(p.get(1)) == e;
-  }
-
-  private static boolean polygon(Object o, double... xy)
-  {
-    List<Object> pts = Json.arr(o);
-    if (pts.size() != 4)
-      return false;
-    for (int i = 0; i < 4; i++)
-    {
-      List<Object> p = Json.arr(pts.get(i));
-      if (Math.abs(dbl(p.get(0)) - xy[2 * i]) > 0.05 || Math.abs(dbl(p.get(1)) - xy[2 * i + 1]) > 0.05)
-        return false;
-    }
-    return true;
-  }
-
   private static long num(Object o)
   {
     return o instanceof Number n ? n.longValue() : Long.MIN_VALUE;
-  }
-
-  private static double dbl(Object o)
-  {
-    return o instanceof Number n ? n.doubleValue() : Double.NaN;
   }
 
   private static int freePort() throws IOException

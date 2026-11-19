@@ -68,7 +68,7 @@ one jar of about 330 KB you can drop on any machine.
 | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | images, edits, video | managed, like llama.cpp | Vulkan, ROCm | `/v1/images/*` `/v1/videos` |
 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `whisper-server` | transcription, translation, live dictation | `binaryPath` (build with `-DGGML_VULKAN=ON`) | Vulkan, CPU | `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/realtime` |
 | [audio.cpp](https://github.com/0xShug0/audio.cpp) `audiocpp_server` | text to speech, diarization, voice conversion | `binaryPath` | Vulkan, XDNA NPU, CPU | `/v1/audio/speech` `/v1/audio/voices` `/v1/audio/voice-changer` |
-| hemera's OCR engine `engines/ocr/ocr_server.py` (PaddleOCR models on ONNX Runtime) | text in pictures, with positions | `binaryPath` (a Python venv) | CPU | `/v1/ocr` |
+| ocr-server, a separate project (PaddleOCR models on ONNX Runtime) | text in pictures, with positions | `binaryPath` (a Python venv), `"task": "ocr"` | CPU | `/v1/ocr` |
 | motion-server, a separate project (Tencent's [HY-Motion 1.0](https://github.com/Tencent-Hunyuan/HY-Motion-1.0) in PyTorch) | a person's whole-body motion from words, as JSON, glTF or BVH | `binaryPath` (a Python venv), `"task": "motion"` | ROCm, CUDA | `/v1/motion/generations` |
 | ollama's bundled `llama-server` | models upstream llama.cpp rejects yet, embedded vision towers | `binaryPath` + `libraryPaths` | ROCm, Vulkan, CUDA | as llama.cpp |
 | [ds4](https://github.com/antirez/ds4), any OpenAI-style server | whatever it serves | **Add engine** / `binaryPath` | your build | as llama.cpp |
