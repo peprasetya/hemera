@@ -67,15 +67,26 @@ one jar of about 370 KB you can drop on any machine.
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | text, tools, reasoning, vision/audio input, embeddings | managed: every release and variant side by side | ROCm, Vulkan, CUDA, SYCL, CPU | `/v1/chat/completions` `/api/chat` `/v1/messages` `/v1/embeddings` |
 | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | images, edits, video | managed, like llama.cpp | Vulkan, ROCm | `/v1/images/*` `/v1/videos` |
 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `whisper-server` | transcription, translation, live dictation | `binaryPath` (build with `-DGGML_VULKAN=ON`) | Vulkan, CPU | `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/realtime` |
-| [audio.cpp](https://github.com/0xShug0/audio.cpp) `audiocpp_server` | text to speech, diarization, voice conversion | `binaryPath` | Vulkan, XDNA NPU, CPU | `/v1/audio/speech` `/v1/audio/voices` `/v1/audio/voice-changer` |
-| ocr-server, a separate project (PaddleOCR models on ONNX Runtime) | text in pictures, with positions | `binaryPath` (a Python venv), `"task": "ocr"` | CPU | `/v1/ocr` |
-| motion-server, a separate project (Tencent's [HY-Motion 1.0](https://github.com/Tencent-Hunyuan/HY-Motion-1.0) in PyTorch) | a person's whole-body motion from words, as JSON, glTF or BVH | `binaryPath` (a Python venv), `"task": "motion"` | ROCm, CUDA | `/v1/motion/generations` |
+| [audio.cpp](https://github.com/0xShug0/audio.cpp) `audiocpp_server`; on the NPU, our fork [hemera-audio.cpp](https://github.com/peprasetya/hemera-audio.cpp) | text to speech, diarization, voice conversion | `binaryPath` (you build it) | Vulkan, CPU; XDNA NPU with the fork | `/v1/audio/speech` `/v1/audio/voices` `/v1/audio/voice-changer` |
+| [hemera-ocr-server](https://github.com/peprasetya/hemera-ocr-server) (PaddleOCR models on ONNX Runtime) | text in pictures, with positions | `binaryPath` (a Python venv), `"task": "ocr"` | CPU | `/v1/ocr` |
+| [hemera-motion-server](https://github.com/peprasetya/hemera-motion-server) (Tencent's [HY-Motion 1.0](https://github.com/Tencent-Hunyuan/HY-Motion-1.0) in PyTorch) | a person's whole-body motion from words, as JSON, glTF or BVH | `binaryPath` (a Python venv), `"task": "motion"` | ROCm, CUDA | `/v1/motion/generations` |
 | ollama's bundled `llama-server` | models upstream llama.cpp rejects yet, embedded vision towers | `binaryPath` + `libraryPaths` | ROCm, Vulkan, CUDA | as llama.cpp |
 | [ds4](https://github.com/antirez/ds4), any OpenAI-style server | whatever it serves | **Add engine** / `binaryPath` | your build | as llama.cpp |
 | [ComfyUI](https://github.com/comfyanonymous/ComfyUI) | image, video and 3D workflows | bridged, not managed | whatever it runs on | `/v1/images/*` `/v1/videos` `/v1/3d/generations` |
 | remote providers | DeepSeek, OpenAI, Gemini, Claude | `proxies`, `type` `openai` or `anthropic` | — | all three dialects |
 
 Each is described in its own section below.
+
+Every engine is a separate program: hemera starts it, passes requests and answers through, and stops
+it. hemera holds no engine code of its own. Three of the engines are ours, each in its own
+repository with its whole setup there:
+- **[hemera-ocr-server](https://github.com/peprasetya/hemera-ocr-server):** the text in pictures.
+- **[hemera-motion-server](https://github.com/peprasetya/hemera-motion-server):** motion from words.
+- **[hemera-audio.cpp](https://github.com/peprasetya/hemera-audio.cpp):** audio.cpp with its large
+  matrix multiplies on AMD's XDNA2 NPU.
+
+Each README lists every download with its source, revision, size, licence and checksum, then the
+Python packages or the build, and the `hemera.json` entry.
 
 ## Install
 
@@ -615,10 +626,13 @@ changer and live transcription do not freeze anything: they keep up next to an L
 
 ### Speech on the NPU
 
-An engine started with `--backend npu` or `cpu` leaves the GPU alone and freezes nothing. audio.cpp
-has an NPU build for Ryzen AI chips (its `docs/build/xdna-npu.md`). So the same voice model can be
-set up twice, once on each engine, and each client chooses by the model's name, as between any two
-models. Next to the `voxcpm2` above:
+An engine started with `--backend npu` or `cpu` leaves the GPU alone and freezes nothing. The NPU
+build for Ryzen AI chips (XDNA2: Strix, Strix Halo, Krackan) is our fork,
+[hemera-audio.cpp](https://github.com/peprasetya/hemera-audio.cpp). It is audio.cpp v0.9.3 with its
+large matrix multiplies on the NPU, and its `docs/build/xdna-npu.md` has the build, which needs AMD's
+XRT and IRON. The fork keeps audio.cpp's Apache-2.0; its own new files are MIT. So the same voice
+model can be set up twice, once on each engine, and each client chooses by the model's name, as
+between any two models. Next to the `voxcpm2` above:
 
 ```json
 "engines": { "audio.cpp-npu": { "binaryPath": "/path/to/npu-build/audiocpp_server", "argStyle": "audiocpp",
@@ -691,6 +705,49 @@ a `/v1/realtime` transcription, a voice changer, a streamed `/v1/audio/speech` �
 wait before they start, and go once the last live session ends; one already running finishes.
 A subtitle job that sends its film a piece at a time therefore pauses within seconds of a call
 starting. Unmarked requests are never held.
+
+## Text in pictures (hemera-ocr-server)
+
+`/v1/ocr` reads the text in a picture and says where each line, word and character is, in reading
+order: for Live Text, where a person selects, copies or looks up what a picture says. The engine
+is [hemera-ocr-server](https://github.com/peprasetya/hemera-ocr-server). It runs PaddleOCR's ONNX
+models (221 MB, Apache-2.0) on the CPU, so it never waits for the GPU. It answers `/v1/ocr` itself;
+hemera picks the model and passes the request through.
+
+```bash
+git clone https://github.com/peprasetya/hemera-ocr-server /media/shared/AIModels/ocr/server
+/media/shared/AIModels/ocr/server/setup/fetch.sh /media/shared/AIModels/ocr      # the models, pinned and checked
+uv venv --python 3.13 /media/shared/AIModels/ocr/venv
+uv pip install --python /media/shared/AIModels/ocr/venv/bin/python -r /media/shared/AIModels/ocr/server/requirements.txt
+```
+
+The `hemera.json` entry is in [docs/ocr-api.md](docs/ocr-api.md) section 3, with the API.
+- **Accuracy:** Latin 0.3% of characters wrong, other scripts 0.7–4.7%; 261 of 262 digit strings
+  exact.
+- **Time:** about a second for a phone screenshot or a 1080p frame.
+- **Memory:** 0.6 GB idle.
+
+## Motion from words (hemera-motion-server)
+
+`/v1/motion/generations` turns words ("a slow twirl, arms out") into a few seconds of a person's
+whole-body motion on SMPL's 22 joints, as JSON, glTF or BVH, for a client to play on its own
+figure. The engine is [hemera-motion-server](https://github.com/peprasetya/hemera-motion-server):
+Tencent's [HY-Motion 1.0](https://github.com/Tencent-Hunyuan/HY-Motion-1.0) in PyTorch, with Qwen3-8B
+and CLIP-L as text encoders. It answers the API itself; hemera starts it on first use and passes the
+requests through.
+
+```bash
+git clone https://github.com/peprasetya/hemera-motion-server /media/shared/AIModels/motion/server
+/media/shared/AIModels/motion/server/setup/fetch.sh /media/shared/AIModels/motion   # 22.3 GB, pinned and checked
+# then a Python 3.12 venv with PyTorch for the GPU and requirements.txt: see the README
+```
+
+- **Setup:** the `hemera.json` entry and the venv for each kind of GPU are in that README. The API
+  is [docs/media-api.md](docs/media-api.md) section 10.
+- **Licence:** HY-Motion is under Tencent's community licence, which does not apply in the EU, the
+  UK or South Korea.
+- **Time:** about 6 s a clip on a Radeon 8060S, once loaded.
+- **Memory:** about 21 GB of GPU memory, beside the chat models.
 
 ## Memory
 
@@ -806,7 +863,8 @@ src/ing/aether/hemera/
   web/                 admin endpoints + embedded UI
 resources/web/         index.html, app.css, app.js
 resources/comfyui/     built-in recipes, one per model family
-docs/media-api.md      the image / video / 3D / speech contract for client authors
+docs/media-api.md      the image / video / 3D / speech / motion contract for client authors
+docs/ocr-api.md        the text-in-pictures contract
 docs/integrate-*.md    hand-off notes for aether.ing and spatiand: which endpoints, how, and what stays in the app
 site/                  the website at aether.ing/hemera, no external assets:
   index.html           start page, features only

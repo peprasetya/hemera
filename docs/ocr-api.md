@@ -4,8 +4,9 @@ This is for a client that shows the text in a picture as text a person can selec
 up. Spatiand's SpatiLoupe (Live Text) and the paused frames of SpatiReel are the first. The OCR
 engine reads the picture and says where each line, word and character is. It stops there:
 translating the text, or answering questions about it, goes to `/v1/chat/completions` like any
-other text. The engine, ocr-server, is a separate program: it answers this API itself, and hemera
-starts it and passes requests and answers through unchanged.
+other text. The engine, [hemera-ocr-server](https://github.com/peprasetya/hemera-ocr-server), is
+a separate program: it answers this API itself, and hemera starts it and passes requests and
+answers through unchanged.
 
 - **Base URL:** `http://<host>:12434`. There is no authentication. CORS is open, as for the rest
   of hemera ([media-api.md](media-api.md)).
@@ -158,8 +159,8 @@ two pictures at once; a third waits for one of them.
 
 ### How long it takes
 
-On deepmagpie, warm. The whole benchmark is the engine's `bench/RESULTS.md`, on deepmagpie in
-`/media/shared/AIModels/ocr/server/bench/`.
+On deepmagpie, warm. The whole benchmark is the engine's
+[bench/RESULTS.md](https://github.com/peprasetya/hemera-ocr-server/blob/main/bench/RESULTS.md).
 
 | picture | time |
 |---|---|
@@ -175,8 +176,9 @@ sending only the `region` that matters saves time.
 
 ## 3. Setting it up (hemera.json)
 
-The engine is ocr-server, a separate project. On deepmagpie it is at
-`/media/shared/AIModels/ocr/server`, and its README has the whole setup:
+The engine is [hemera-ocr-server](https://github.com/peprasetya/hemera-ocr-server), a separate
+project; on deepmagpie it is at `/media/shared/AIModels/ocr/server`. Its README has the whole
+setup:
 - a Python 3.13 venv with numpy, ONNX Runtime, OpenCV (headless), Pillow, PyYAML and `regex`;
 - PaddleOCR's ONNX models, 221 MB. Each comes from huggingface.co/PaddlePaddle at a fixed
   revision, checked by sha256. All are Apache-2.0:

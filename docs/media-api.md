@@ -511,8 +511,13 @@ built from `hemera.parameters`.
 Words go in ("a slow twirl, arms out") and a few seconds of a person's whole-body motion come out,
 on a documented skeleton, for a client to play on its own figure. OpenAI defines no such endpoint,
 so this is hemera's own, with the same lifecycle as 3D. The model is `hy-motion-1.0` (kind
-`motion`), Tencent's HY-Motion 1.0. Its engine, the motion server, answers this API itself;
-hemera starts it on first use and passes requests and answers through unchanged.
+`motion`), Tencent's HY-Motion 1.0. Its engine,
+[hemera-motion-server](https://github.com/peprasetya/hemera-motion-server), answers this API itself;
+hemera starts it on first use and passes requests and answers through unchanged. That README has
+the setup:
+- the downloads, 22.3 GB, each with its source, revision, size, licence and checksum;
+- the venv for each kind of GPU;
+- the `hemera.json` entry.
 
 | Call | Purpose |
 |---|---|
