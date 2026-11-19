@@ -11,7 +11,7 @@
   <meta property="og:image" content="https://aether.ing/aether.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='13' fill='%23f5b14c'/%3E%3Cg stroke='%23f5b14c' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="apple-touch-icon" href="../../aether.png">
-  <link rel="stylesheet" href="../style.css?v=1">
+  <link rel="stylesheet" href="../style.css?v=2">
 </head>
 <body>
 <header class="nav">
@@ -76,6 +76,7 @@
         </li>
         <li><a href="#speech">Speech</a></li>
         <li><a href="#three">3D API</a></li>
+        <li><a href="#motion">Motion API</a></li>
         <li><a href="#api">API surface</a></li>
         <li><a href="#config">Configuration</a></li>
       </ol>
@@ -174,6 +175,7 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
       <section id="engines">
         <h2>Engines</h2>
         <p class="section-lede">An engine is a server binary hemera starts on demand, one process per loaded model. <b>Managed</b> engines are downloaded from their GitHub releases and version-tracked; <b>custom</b> engines are a binary path you provide.</p>
+        <div class="callout"><b>Hemera is only a router.</b> Every engine is a separate program in its own project, like llama.cpp or stable-diffusion.cpp: hemera starts it, passes requests and answers through unchanged, and stops it. Hemera's downloader installs llama.cpp and stable-diffusion.cpp releases, and its scanner finds GGUF and Ollama models; Python engines such as motion-server are set up by hand from their own READMEs.</div>
 
         <h3 id="engine-table">Supported binaries</h3>
         <div class="table-wrap">
@@ -207,6 +209,13 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
                 <td>Custom; hemera writes its model config per model</td>
                 <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag ok">XDNA NPU</span><span class="tag">CPU</span></div></td>
                 <td><code>/v1/audio/speech</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code></td>
+              </tr>
+              <tr>
+                <td><b>motion-server</b><br><small>a separate project</small></td>
+                <td>A person's whole-body motion from words — Tencent's HY-Motion 1.0 in PyTorch</td>
+                <td>Custom — a Python venv, set up by hand; see <a href="#motion-setup">Motion setup</a></td>
+                <td><div class="tags"><span class="tag sun">ROCm</span><span class="tag">CUDA</span></div></td>
+                <td><code>/v1/motion/generations</code></td>
               </tr>
               <tr>
                 <td><b>ollama's llama-server</b><br><small>/usr/local/lib/ollama</small></td>
@@ -461,6 +470,140 @@ curl http://host:12434/v1/3d/generations/3d_…/content -o teapot.glb</pre>
         </ul>
       </section>
 
+      <!-- ======================= MOTION ======================= -->
+      <section id="motion">
+        <h2>Motion API</h2>
+        <p class="section-lede">Words go in — <i>"a slow twirl, arms out"</i> — and 1 to 10 seconds of a person's whole-body motion come out, on a documented skeleton, for a client to play on its own figure. OpenAI defines no such endpoint, so this is hemera's own, with the same lifecycle as the <a href="#three">3D API</a>. The model is <code>hy-motion-1.0</code>, listed in <code>/v1/models</code> with kind <code>motion</code>.</p>
+        <div class="callout"><b>Hemera only routes this.</b> The motion itself comes from motion-server, a separate program in its own project that answers this API. Hemera starts it on the first request, passes requests and answers through unchanged, and stops it when idle. motion-server is not published yet; <a href="#motion-setup">Setup</a> lists what it is made of.</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Call</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>POST /v1/motion/generations</code></td><td>Start a clip (JSON). Answers at once with the job: <code>id</code>, <code>status</code>.</td></tr>
+              <tr><td><code>GET /v1/motion/generations/{id}</code></td><td><code>status</code>, <code>progress</code>, <code>error</code>.</td></tr>
+              <tr><td><code>GET /v1/motion/generations/{id}/content?format=json</code></td><td>The motion: <code>json</code> (default), <code>glb</code> or <code>bvh</code>. <code>409</code> until completed.</td></tr>
+              <tr><td><code>DELETE /v1/motion/generations/{id}</code></td><td>Cancel a clip being made, or drop a finished one. Nothing of it is kept afterwards.</td></tr>
+              <tr><td><code>GET /v1/motion/generations</code></td><td>The clips still held, newest first.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="term">
+          <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
+<pre>curl http://host:12434/v1/motion/generations -H 'Content-Type: application/json' -d '{
+  "model": "hy-motion-1.0", "prompt": "a person waves with the right hand", "duration": 4 }'
+<span class="c"># -> {"id": "motion_3f9c…", "object": "motion.generation", "status": "queued", "progress": 0, …}</span>
+
+curl http://host:12434/v1/motion/generations/motion_3f9c…     <span class="c"># queued | in_progress | completed</span>
+curl 'http://host:12434/v1/motion/generations/motion_3f9c…/content?format=glb' -o wave.glb
+curl -X DELETE http://host:12434/v1/motion/generations/motion_3f9c…</pre>
+        </div>
+        <div class="table-wrap">
+          <table class="fields">
+            <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>prompt</code></td><td>Required. How the body moves, in English, at most about 60 words. One or two actions work best (<i>"a person waves with the right hand raised above the head"</i>). Appearance, emotions on their own, objects, scenery and other people are not understood. A longer prompt is cut at 128 tokens, and the job then says <code>"prompt_truncated": true</code>.</td></tr>
+              <tr><td><code>duration</code></td><td>Seconds, 1–10. Default 4.</td></tr>
+              <tr><td><code>fps</code></td><td>Frames a second, 1–120. Default 30, the model's own rate; others are resampled.</td></tr>
+              <tr><td><code>seed</code></td><td>0–4294967295. Default: drawn and reported back, so a clip can be made again.</td></tr>
+              <tr><td><code>loop</code></td><td><code>true</code>: the clip ends exactly as it began, in pose, place and heading — for an idle. Default <code>false</code>.</td></tr>
+              <tr><td><code>constraints</code></td><td>Not taken by this model (<code>400</code>): no keyframes, paths or target poses.</td></tr>
+              <tr><td><code>model</code></td><td><code>hy-motion-1.0</code>. May be left out: hemera then uses its default motion model (<code>motionModel</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="term">
+          <div class="bar"><span>the job object</span></div>
+<pre>{ "id": "motion_3f9c0e2d8b1a4c55", "object": "motion.generation", "model": "hy-motion-1.0",
+  "status": "completed", "progress": 100, "created_at": 1795085863, "completed_at": 1795085869,
+  "duration": 4.0, "fps": 30, "frames": 120, "loop": false, "seed": 11,
+  "timing_ms": { "text": 394, "sample": 5321, "decode": 104, "total": 5828 },
+  "output": { "formats": ["json", "glb", "bvh"],
+              "url": "/v1/motion/generations/motion_3f9c0e2d8b1a4c55/content" } }</pre>
+        </div>
+        <ul>
+          <li><code>status</code>: <code>queued</code> → <code>in_progress</code> → <code>completed</code> | <code>failed</code> | <code>cancelled</code>; <code>error</code> (<code>{"code","message"}</code>) on failure. <code>progress</code> runs 0–100 evenly over the model's 50 steps.</li>
+          <li>Clips are held in the engine's memory for an hour, until deleted, or until the model stops. <b>Fetch the motion when it completes, keep it yourself, and <code>DELETE</code> it.</b></li>
+        </ul>
+
+        <h3 id="motion-format">The motion, as JSON</h3>
+        <div class="term">
+          <div class="bar"><span>?format=json</span></div>
+<pre>{ "object": "motion", "model": "hy-motion-1.0", "fps": 30, "frame_count": 120, "duration": 4.0,
+  "loop": false, "seed": 11,
+  "skeleton": {
+    "joints":  ["Pelvis", "L_Hip", "R_Hip", "Spine1", "L_Knee", "R_Knee", "Spine2", "L_Ankle", "R_Ankle",
+                "Spine3", "L_Foot", "R_Foot", "Neck", "L_Collar", "R_Collar", "Head", "L_Shoulder",
+                "R_Shoulder", "L_Elbow", "R_Elbow", "L_Wrist", "R_Wrist"],
+    "parents": [-1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 12, 13, 14, 16, 17, 18, 19],
+    "offsets": [[-0.0018, 0.97017, 0.02822], [0.08237, -0.08994, -0.0031], …],
+    "units": "metres", "up": "+Y", "forward": "+Z", "left": "+X" },
+  "frames": [
+    { "translation": [0.0, 0.97616, 0.0], "rotations": [[0.024122, -6.6e-05, 0.002753, 0.999705], …] },
+    … ] }</pre>
+        </div>
+        <ul>
+          <li><b>Skeleton.</b> SMPL's 22 body joints in SMPL's order, each with its parent (<code>-1</code> for the root) and its rest offset from that parent, in metres. The rest pose is a T-pose standing on y = 0, facing +Z, +Y up, the person's own left +X — SMPL's convention, and glTF's. There are no finger joints.</li>
+          <li><b>Frames.</b> One per frame, <code>frame_count</code> = <code>duration</code> × <code>fps</code>. <code>translation</code> is the pelvis in the world, in metres, replacing the root's rest offset. <code>rotations</code> holds each joint's local rotation from its rest pose as a unit quaternion (x, y, z, w); the root's is its rotation in the world. A joint's world rotation is <code style="white-space:nowrap">R = R_parent · r</code> and its position <code style="white-space:nowrap">p = p_parent + R_parent · offset</code>.</li>
+          <li><b>Placement.</b> The first frame stands at x = z = 0 facing +Z; the body's lowest point over the clip touches y = 0.</li>
+          <li><b>Loops.</b> With <code>"loop": true</code> the last frame is the first. A quaternion and its negation are the same rotation, so compare rotations, not numbers.</li>
+          <li><b><code>glb</code></b> is the same skeleton as a skin, with a stick-figure mesh and one animation named <code>motion</code>. Blender, three.js and <code>&lt;model-viewer&gt;</code> open it. <b><code>bvh</code></b> is in metres, +Y up, rotations as Euler ZXY in degrees.</li>
+        </ul>
+
+        <h3 id="motion-limits">Times, memory and weaknesses</h3>
+        <p>Measured on the reference machine — Ryzen AI Max+ 395, Radeon 8060S, 128 GB shared, ROCm 7.13:</p>
+        <ul>
+          <li><b>About 6 s a clip</b>, whatever its length — 1 s or 10 s, 30 or 60 fps. The first clip after a start also waits for the model to load: 34–43 s. A request that would wait more than 90 s answers <code>503</code> with <code>Retry-After</code>.</li>
+          <li><b>About 21 GB of GPU memory</b> while loaded, which fits beside the chat models. Hemera unloads it after 10 idle minutes, and sooner if another model needs the room.</li>
+          <li><b>Fingers do not move</b>; the hands keep one relaxed shape.</li>
+          <li><b>Hands and the body.</b> A hand meant to rest on a thigh, a hip or the other hand comes close, but may hover or pass in. Sitting happens on a chair nobody sees.</li>
+          <li><b>Feet.</b> Standing still is clean. When the body travels or turns, planted feet slide — up to 20–30 cm in a step — and they can float 1–2 cm. Foot IK in the player fixes this where it shows.</li>
+          <li><b>Amounts are followed loosely:</b> <i>"a slow twirl"</i> made a half turn.</li>
+          <li><b>Private.</b> Prompts are never logged (only their length), clips live in memory only and are gone after <code>DELETE</code>, and nothing leaves the machine.</li>
+        </ul>
+        <div class="callout"><b>Licence.</b> HY-Motion's weights and code are under the Tencent HY-Motion 1.0 Community License. It does not apply in the European Union, the United Kingdom or South Korea; services that had more than 1 million monthly users need a licence from Tencent; outputs may not be used to improve other AI models. Tencent claims no rights in the outputs.</div>
+
+        <h3 id="motion-setup">Setup</h3>
+        <p>Like every engine, motion-server is set up beside hemera, not inside it. Hemera's downloader installs llama.cpp and stable-diffusion.cpp releases only, and its scanner finds GGUF and Ollama models only, so a Python engine like this one is installed by hand from its own README. It runs Tencent's <a href="https://github.com/Tencent-Hunyuan/HY-Motion-1.0">HY-Motion 1.0</a> (December 2025), a flow-matching transformer with one billion parameters, with two text encoders. The downloads come to 22.3 GB, each pinned to a revision and checked by hash:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>What</th><th>From</th><th>Size</th><th>Licence</th></tr></thead>
+            <tbody>
+              <tr><td>HY-Motion 1.0 weights</td><td><code>huggingface.co/tencent/HY-Motion-1.0</code> @ <code>620dd559</code></td><td>4.17 GB</td><td>Tencent HY-Motion 1.0 Community</td></tr>
+              <tr><td>Qwen3-8B, text encoder</td><td><code>huggingface.co/Qwen/Qwen3-8B</code> @ <code>b968826d</code></td><td>16.4 GB</td><td>Apache-2.0</td></tr>
+              <tr><td>CLIP ViT-L/14, text encoder</td><td><code>huggingface.co/openai/clip-vit-large-patch14</code> @ <code>32bd6428</code></td><td>1.72 GB</td><td>MIT</td></tr>
+              <tr><td>Tencent's code and body template</td><td><code>github.com/Tencent-Hunyuan/HY-Motion-1.0</code> @ <code>c71ea6c</code></td><td>~6 MB</td><td>Tencent HY-Motion 1.0 Community</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>It runs in Python 3.12 with PyTorch on a GPU (ROCm or CUDA). Hemera then knows it as a custom engine; <code>"task": "motion"</code> is what routes <code>/v1/motion/generations</code> to it:</p>
+        <div class="term">
+          <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
+<pre>"engines": {
+  "motion-server": {
+    "binaryPath": "/opt/motion/venv/bin/python",
+    "argStyle": "custom",
+    "healthPath": "/health",
+    "env": {
+      "HSA_TOOLS_DISABLE_REGISTER": "1",
+      "TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL": "1"
+    },
+    "defaultArgs": ["-I", "/opt/motion/server/motion_server.py",
+                    "--port", "{port}", "--models", "{file}"]
+  }
+},
+"models": [
+  { "name": "hy-motion-1.0", "engine": "motion-server", "task": "motion",
+    "file": "/opt/motion/models",
+    "args": ["--code", "/opt/motion/HY-Motion-1.0", "--name", "hy-motion-1.0"],
+    "keepAliveSeconds": 600, "memoryMB": 24576 }
+],
+"motionModel": "hy-motion-1.0"</pre>
+        </div>
+        <p>The two environment settings matter on AMD GPUs: <code>TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL</code> turns on memory-efficient attention (a clip in 5.6 s instead of 9 s), and <code>HSA_TOOLS_DISABLE_REGISTER</code> keeps ROCm 7.13 from spinning a core while idle. Elsewhere they do nothing.</p>
+        <p>The full contract is <a href="https://github.com/peprasetya/hemera/blob/main/docs/media-api.md#10-motion--v1motiongenerations">docs/media-api.md, section 10</a>; how an app plays a clip on its own figure is in <a href="https://github.com/peprasetya/hemera/blob/main/docs/integrate-spatiand.md#5-pals-moves-motion-from-words-spatipal">docs/integrate-spatiand.md, section 5</a>.</p>
+        <p><b>Why HY-Motion, not NVIDIA's Kimodo?</b> Kimodo's open checkpoints use NVIDIA's own SOMA skeleton rather than SMPL's 22 joints, its SMPL-X checkpoint is for research only, and its text encoder is the gated Meta-Llama-3-8B-Instruct.</p>
+      </section>
+
       <!-- ======================= API ======================= -->
       <section id="api">
         <h2>API surface</h2>
@@ -471,12 +614,12 @@ curl http://host:12434/v1/3d/generations/3d_…/content -o teapot.glb</pre>
               <tr><td><b>Ollama</b></td><td><code>/api/tags</code> <code>/api/ps</code> <code>/api/show</code> <code>/api/chat</code> <code>/api/generate</code> <code>/api/embed</code> <code>/api/delete</code> <code>/api/stop</code> <code>/api/version</code></td></tr>
               <tr><td><b>OpenAI</b></td><td><code>/v1/models</code> <code>/v1/chat/completions</code> <code>/v1/completions</code> <code>/v1/embeddings</code> <code>/v1/images/generations</code> <code>/v1/images/edits</code> <code>/v1/videos</code> <code>/v1/audio/transcriptions</code> <code>/v1/audio/translations</code> <code>/v1/audio/speech</code> <code>/v1/realtime</code></td></tr>
               <tr><td><b>Anthropic</b></td><td><code>/v1/messages</code> <code>/v1/messages/count_tokens</code></td></tr>
-              <tr><td><b>hemera</b></td><td><code>/v1/3d/generations</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code> (WebSocket); admin under <code>/hemera/api/…</code></td></tr>
+              <tr><td><b>hemera</b></td><td><code>/v1/3d/generations</code> <code>/v1/motion/generations</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code> (WebSocket); admin under <code>/hemera/api/…</code></td></tr>
             </tbody>
           </table>
         </div>
-        <p><b>Discovery.</b> Neither OpenAI's nor Ollama's model list says what a model is for, so hemera adds it in each dialect's own style. <code>/v1/models</code> entries carry a <code>hemera</code> object — <code>kind</code> (<code>text</code>, <code>image</code>, <code>video</code>, <code>3d</code>, <code>transcription</code>, <code>speech</code>, <code>voice-changer</code>, <code>diarization</code>), the <code>endpoint</code> to call, and for ComfyUI models their <code>parameters</code> with types and ranges. <code>/api/tags</code> and <code>/api/show</code> add <code>image</code>, <code>video</code>, <code>3d</code>, <code>transcription</code> and <code>speech</code> to Ollama's <code>capabilities</code>. Asking a model for the wrong thing is answered with the endpoint that would have worked.</p>
-        <p><b>Cancelling images.</b> Send <code>"stream": true</code> and close the stream, or name the request with <code>X-Hemera-Request-Id</code> and <code>POST /hemera/api/images/cancel</code> with <code>{"id": "…"}</code>. Videos and 3D jobs cancel with <code>DELETE</code>.</p>
+        <p><b>Discovery.</b> Neither OpenAI's nor Ollama's model list says what a model is for, so hemera adds it in each dialect's own style. <code>/v1/models</code> entries carry a <code>hemera</code> object — <code>kind</code> (<code>text</code>, <code>image</code>, <code>video</code>, <code>3d</code>, <code>motion</code>, <code>transcription</code>, <code>speech</code>, <code>voice-changer</code>, <code>diarization</code>), the <code>endpoint</code> to call, and for ComfyUI models their <code>parameters</code> with types and ranges. <code>/api/tags</code> and <code>/api/show</code> add <code>image</code>, <code>video</code>, <code>3d</code>, <code>motion</code>, <code>transcription</code> and <code>speech</code> to Ollama's <code>capabilities</code>. Asking a model for the wrong thing is answered with the endpoint that would have worked.</p>
+        <p><b>Cancelling images.</b> Send <code>"stream": true</code> and close the stream, or name the request with <code>X-Hemera-Request-Id</code> and <code>POST /hemera/api/images/cancel</code> with <code>{"id": "…"}</code>. Videos, 3D and motion jobs cancel with <code>DELETE</code>.</p>
         <p>The full contract for client authors — every field, the job objects, a client loop for video and 3D — is <a href="https://github.com/peprasetya/hemera/blob/main/docs/media-api.md">docs/media-api.md</a>.</p>
       </section>
 

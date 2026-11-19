@@ -11,7 +11,7 @@
   <meta property="og:image" content="https://aether.ing/aether.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='13' fill='%23f5b14c'/%3E%3Cg stroke='%23f5b14c' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="apple-touch-icon" href="../aether.png">
-  <link rel="stylesheet" href="style.css?v=1">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <header class="nav">
@@ -126,7 +126,7 @@
             <li><b>Many binaries:</b> sd.cpp, whisper.cpp, audio.cpp, ds4, ollama's fork, your own</li>
             <li><b>Backend per model</b> — ROCm, Vulkan, CUDA, CPU, NPU on one machine</li>
             <li><b>A bridge to ComfyUI</b> for models that exist only as workflows</li>
-            <li><b>Its own 3D API</b>, where OpenAI defines none</li>
+            <li><b>Its own 3D and motion APIs</b>, where OpenAI defines none</li>
             <li><b>Anthropic's API</b> too, and remote providers as local names</li>
           </ul>
         </div>
@@ -143,7 +143,7 @@
       <div class="head center reveal">
         <div class="eyebrow">What it serves</div>
         <h2>Not only text.</h2>
-        <p class="sub">Chat models sit next to image, video, 3D and speech models in the same list. Each one says what it makes and which endpoint to call.</p>
+        <p class="sub">Chat models sit next to image, video, 3D, motion and speech models in the same list. Each one says what it makes and which endpoint to call.</p>
       </div>
       <div class="kinds">
         <div class="kind reveal">
@@ -161,6 +161,10 @@
         <div class="kind reveal">
           <div class="art art-3d"><svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><path d="M50 10 88 30v40L50 90 12 70V30z"/><path d="M12 30l38 20 38-20M50 50v40"/><path d="M31 20l38 20M69 20 31 40" opacity=".35"/></svg></div>
           <div class="body"><h3>3D</h3><p>A picture to a <code>.glb</code> mesh, with vertex colours or full PBR textures.</p></div>
+        </div>
+        <div class="kind reveal">
+          <div class="art art-motion"><svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="50" cy="16" r="9"/><path d="M50 27v30M50 57 38 86M50 57l14 27M50 36 30 50"/><path class="arm" d="M50 36l20-14"/><path d="M50 36l21-4M50 36l17 9" opacity=".3"/></svg></div>
+          <div class="body"><h3>Motion</h3><p>Words to a few seconds of whole-body motion, as JSON, glTF or BVH.</p></div>
         </div>
         <div class="kind reveal">
           <div class="art art-voice"><i style="height:20px;animation-delay:-.1s"></i><i style="height:40px;animation-delay:-.5s"></i><i style="height:28px;animation-delay:-.3s"></i><i style="height:52px;animation-delay:-.8s"></i><i style="height:32px;animation-delay:-.2s"></i><i style="height:44px;animation-delay:-.6s"></i><i style="height:22px;animation-delay:-.4s"></i></div>
@@ -337,19 +341,55 @@
     </div>
   </section>
 
+  <!-- ======================= MOTION ======================= -->
+  <section id="motion" style="padding-top:24px">
+    <div class="wrap">
+      <div class="head reveal">
+        <div class="eyebrow">hemera's own endpoint, again</div>
+        <h2>Motion from words.</h2>
+        <p class="sub">Ask for <i>"a slow twirl, arms out"</i> and get back 1 to 10 seconds of a person moving, for an app to play on its own character. OpenAI has nothing like it either, so it works like the 3D API: start a job, poll it, fetch the result, delete it.</p>
+      </div>
+      <div class="split" style="align-items:start">
+        <div class="reveal">
+          <ul class="checks" style="margin-top:0">
+            <li><b>A skeleton you can rely on.</b> SMPL's 22 body joints, in metres, +Y up, facing +Z — the same convention as glTF.</li>
+            <li><b>Three formats.</b> JSON for your own player, binary glTF that opens in Blender or three.js, and BVH.</li>
+            <li><b>Idles that loop.</b> <code>"loop": true</code> ends exactly where the clip began.</li>
+            <li><b>About six seconds a clip</b> on a Strix Halo, beside the chat models. Prompts are never logged and clips never leave the machine.</li>
+          </ul>
+          <a class="more" href="docs/#motion">Motion API reference →</a>
+        </div>
+        <div class="term reveal">
+          <div class="bar"><span>words → motion</span></div>
+<pre><span class="p">$ </span>curl hemera:12434/v1/motion/generations \
+    -d '{"model":"hy-motion-1.0",
+         "prompt":"a person waves with the right hand",
+         "duration":4}'
+{"id":"motion_3f9c…","status":"queued"}
+
+<span class="p">$ </span>curl -o wave.glb \
+    'hemera:12434/v1/motion/generations/{id}/content?format=glb'</pre>
+        </div>
+      </div>
+      <div class="honest reveal">
+        <b>What to expect.</b> It runs Tencent's HY-Motion 1.0. Fingers do not move, hands meant to touch the body may hover or pass in, planted feet slide when the body turns or travels, and amounts are followed loosely. HY-Motion's licence does not apply in the EU, the UK or South Korea, large services need Tencent's permission, and its outputs may not be used to train other AI models.
+      </div>
+    </div>
+  </section>
+
   <!-- ======================= OPEN ======================= -->
   <section style="padding-top:24px">
     <div class="wrap">
       <div class="head reveal">
         <div class="eyebrow">Open and small</div>
         <h2>A router, not an application.</h2>
-        <p class="sub">Hemera has no gallery, no chat window and no viewer beyond what configuring it needs. Apps such as <a href="https://aether.ing">aether.ing</a> sit on top and discover what a server offers through its API.</p>
+        <p class="sub">Every engine is a separate program in its own project, like llama.cpp or stable-diffusion.cpp. Hemera starts it, passes requests and answers through unchanged, and stops it. It has no gallery, no chat window and no viewer beyond what configuring it needs: apps such as <a href="https://aether.ing">aether.ing</a> sit on top and discover what a server offers through its API.</p>
       </div>
       <div class="stack">
         <div class="stat reveal"><b>MIT</b><span>Open-source licence</span></div>
         <div class="stat reveal"><b>~330 KB</b><span>One executable jar</span></div>
         <div class="stat reveal"><b>0</b><span>Dependencies — JDK only</span></div>
-        <div class="stat reveal"><b>1 port</b><span>Ollama · OpenAI · Anthropic · 3D</span></div>
+        <div class="stat reveal"><b>1 port</b><span>Ollama · OpenAI · Anthropic · 3D · motion</span></div>
       </div>
     </div>
   </section>
