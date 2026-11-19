@@ -11,7 +11,7 @@
   <meta property="og:image" content="https://aether.ing/aether.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='13' fill='%23f5b14c'/%3E%3Cg stroke='%23f5b14c' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="apple-touch-icon" href="../../aether.png">
-  <link rel="stylesheet" href="../style.css?v=2">
+  <link rel="stylesheet" href="../style.css?v=3">
 </head>
 <body>
 <header class="nav">
@@ -77,6 +77,7 @@
         <li><a href="#speech">Speech</a></li>
         <li><a href="#three">3D API</a></li>
         <li><a href="#motion">Motion API</a></li>
+        <li><a href="#ocr">OCR API</a></li>
         <li><a href="#api">API surface</a></li>
         <li><a href="#config">Configuration</a></li>
       </ol>
@@ -175,7 +176,7 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
       <section id="engines">
         <h2>Engines</h2>
         <p class="section-lede">An engine is a server binary hemera starts on demand, one process per loaded model. <b>Managed</b> engines are downloaded from their GitHub releases and version-tracked; <b>custom</b> engines are a binary path you provide.</p>
-        <div class="callout"><b>Hemera is only a router.</b> Every engine is a separate program in its own project, like llama.cpp or stable-diffusion.cpp: hemera starts it, passes requests and answers through unchanged, and stops it. Hemera's downloader installs llama.cpp and stable-diffusion.cpp releases, and its scanner finds GGUF and Ollama models; Python engines such as motion-server are set up by hand from their own READMEs.</div>
+        <div class="callout"><b>Hemera is only a router.</b> Every engine is a separate program in its own project, like llama.cpp or stable-diffusion.cpp: hemera starts it, passes requests and answers through unchanged, and stops it. Hemera's downloader installs llama.cpp and stable-diffusion.cpp releases, and its scanner finds GGUF and Ollama models; Python engines such as motion-server and ocr-server are set up by hand from their own READMEs.</div>
 
         <h3 id="engine-table">Supported binaries</h3>
         <div class="table-wrap">
@@ -216,6 +217,13 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
                 <td>Custom — a Python venv, set up by hand; see <a href="#motion-setup">Motion setup</a></td>
                 <td><div class="tags"><span class="tag sun">ROCm</span><span class="tag">CUDA</span></div></td>
                 <td><code>/v1/motion/generations</code></td>
+              </tr>
+              <tr>
+                <td><b>ocr-server</b><br><small>a separate project</small></td>
+                <td>Text in pictures, with each line, word and character placed — PaddleOCR's models on ONNX Runtime</td>
+                <td>Custom — a Python venv, set up by hand; see <a href="#ocr-setup">OCR setup</a></td>
+                <td><div class="tags"><span class="tag">CPU</span></div></td>
+                <td><code>/v1/ocr</code></td>
               </tr>
               <tr>
                 <td><b>ollama's llama-server</b><br><small>/usr/local/lib/ollama</small></td>
@@ -604,6 +612,133 @@ curl -X DELETE http://host:12434/v1/motion/generations/motion_3f9c…</pre>
         <p><b>Why HY-Motion, not NVIDIA's Kimodo?</b> Kimodo's open checkpoints use NVIDIA's own SOMA skeleton rather than SMPL's 22 joints, its SMPL-X checkpoint is for research only, and its text encoder is the gated Meta-Llama-3-8B-Instruct.</p>
       </section>
 
+      <!-- ======================= OCR ======================= -->
+      <section id="ocr">
+        <h2>OCR API</h2>
+        <p class="section-lede">For apps that let a person select, copy or look up the text in a picture: <code>/v1/ocr</code> returns every line, word and character, with where it is. It stops there: translating the text, or asking about it, goes to <code>/v1/chat/completions</code> like any other text. The model is <code>pp-ocrv6</code>, listed in <code>/v1/models</code> with kind <code>ocr</code>.</p>
+        <div class="callout"><b>Hemera only routes this.</b> The reading comes from ocr-server, a separate program in its own project that answers this API itself: the request's checks and the answer's shape. Hemera picks the model from the options' <code>model</code>, refuses a picture over 50 MB, waits out the engine's start, passes request and answer through byte for byte, and stops the work when the client hangs up or after 60 s. ocr-server is not published yet; <a href="#ocr-setup">Setup</a> lists what it is made of.</div>
+        <div class="table-wrap">
+          <table class="fields">
+            <thead><tr><th>Call</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /v1/ocr</code></td><td>What is offered: the models, whether each is loaded, the scripts it reads well, the limits (50 MB, 50 million pixels).</td></tr>
+              <tr><td><code>POST /v1/ocr</code></td><td>Read a picture: <code>multipart/form-data</code> with the picture in <code>image</code> (or <code>file</code>) — PNG, JPEG, WebP or TIFF — and an optional JSON <code>options</code> part.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="term">
+          <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
+<pre><span class="c"># a photo, everything automatic</span>
+curl -F image=@photo.jpg http://host:12434/v1/ocr
+
+<span class="c"># an Indonesian letter, words only — a list without "auto" is the fastest</span>
+curl -F image=@letter.png -F 'options={"languages":["id"],"granularity":"words"}' \
+  http://host:12434/v1/ocr
+
+<span class="c"># the subtitle band of a paused 1080p frame, known to be upright</span>
+curl -F image=@frame.png -F 'options={"region":[0,780,1920,300],"orientation":0}' \
+  http://host:12434/v1/ocr</pre>
+        </div>
+        <div class="table-wrap">
+          <table class="fields">
+            <thead><tr><th>Option</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>languages</code></td><td>BCP-47 tags expected, or <code>["auto"]</code> (default). A tag for a script the main reader lacks (<code>ko</code>, <code>ar</code>, <code>th</code>, <code>hi</code>, <code>ru</code>, <code>el</code>, <code>ta</code>, <code>te</code>) brings in that script's recogniser; with <code>"auto"</code> in the list, other scripts are found by themselves.</td></tr>
+              <tr><td><code>granularity</code></td><td><code>"lines"</code>, <code>"words"</code> or <code>"chars"</code> (default: lines, words and characters).</td></tr>
+              <tr><td><code>region</code></td><td><code>[x, y, w, h]</code>: read only there. Coordinates in the answer are still the whole picture's.</td></tr>
+              <tr><td><code>orientation</code></td><td><code>"auto"</code> (default), or how far the text is turned clockwise: <code>0</code>, <code>90</code>, <code>180</code>, <code>270</code>. A client that knows saves the guess.</td></tr>
+              <tr><td><code>model</code></td><td>A name from <code>GET /v1/ocr</code>, or <code>null</code> for the default (<code>ocrModel</code>).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="term">
+          <div class="bar"><span>the answer, shortened</span></div>
+<pre>{ "version": 1, "model": "pp-ocrv6", "image": { "width": 1712, "height": 1080 }, "orientation": 0,
+  "timing_ms": { "total": 1529, "orientation": 5, "detect": 753, "recognize": 702 },
+  "text": "PROVINSI DKI JAKARTA\nKOTA JAKARTA SELATAN\n\nNIK\n: 3171…",
+  "blocks": [ { "polygon": [[540, 38], [1236, 38], [1236, 156], [540, 156]],
+    "lines": [ { "text": "PROVINSI DKI JAKARTA",
+      "polygon": [[556.2, 41.1], [1229.8, 41.1], [1229.8, 92.9], [556.2, 92.9]],
+      "angle": 0, "direction": "ltr", "script": "Latn", "language": "id", "confidence": 0.998,
+      "words": [ { "text": "PROVINSI", "start": 0, "end": 8, "confidence": 0.999,
+                   "polygon": [[561.7, 41.1], [781.2, 41.1], [781.2, 92.9], [561.7, 92.9]] }, … ],
+      "chars": [[5.5, 33.9], [33.9, 62.0], …], "chars_estimated": false } ] } ] }</pre>
+        </div>
+        <ul>
+          <li><b>Reading order.</b> <code>text</code> is everything in reading order, lines joined by <code>\n</code> and blocks by <code>\n\n</code>. Blocks are paragraphs, columns and a form's rows: a form's labels and values, and a receipt's items and prices, are read row by row.</li>
+          <li><b>Lines</b> carry a four-point <code>polygon</code> starting at the line's own top-left as a reader sees it, an <code>angle</code>, a <code>direction</code> (<code>ltr</code>, <code>rtl</code>, or <code>ttb</code> for vertical CJK), an ISO 15924 <code>script</code>, a <code>language</code> and a <code>confidence</code>. Lines under 0.5 are left out: a wrong reading is worse than none.</li>
+          <li><b>Characters.</b> <code>chars</code> has one <code>[start, end]</code> per grapheme cluster — é as e + U+0301 is one, as is an emoji with its skin tone — in pixels along the reading direction from the polygon's first point. They come from the recogniser itself (<code>"char_boxes": "exact"</code>), so a highlight lands on the right letters.</li>
+          <li><b>Errors</b> are <code>{"error": "…"}</code>, written to be shown to a person: <code>400</code> for a bad picture or option, <code>413</code> over 50 MB or 50 million pixels, <code>503</code> with <code>Retry-After</code> while the engine starts, <code>504</code> after <code>ocrTimeoutSeconds</code>.</li>
+          <li><b>Interactive first.</b> An OCR request never waits behind background jobs or an open Realtime voice session. The engine reads two pictures at once; a third waits for one of them.</li>
+          <li><b>Private.</b> Pictures and text live in memory for the length of a request and are never logged — the log has sizes, counts and times. Nothing leaves the machine.</li>
+        </ul>
+
+        <h3 id="ocr-limits">Speed, accuracy and weaknesses</h3>
+        <p>Measured on the reference machine, warm, through hemera — on the CPU, so it never waits for or pauses an LLM. Accuracy is on 33 generated test pictures, not real documents.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Picture</th><th>Time</th></tr></thead>
+            <tbody>
+              <tr><td>Phone screenshot, 1170×2532</td><td>1.1 s</td></tr>
+              <tr><td>Video frame, 1080p / 4K</td><td>0.9 s / 2.8 s</td></tr>
+              <tr><td>Photo, 4000×3000</td><td>3.6 s</td></tr>
+              <tr><td>A4 page at 300 dpi</td><td>4.5 s</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <ul>
+          <li><b>Full resolution.</b> Large pictures are not shrunk: they are read in overlapping tiles stitched before any line is cut, so small print stays readable and no line breaks where tiles meet. Sending just the <code>region</code> that matters saves time.</li>
+          <li><b>Characters wrong:</b> Latin 0.3%, Arabic 0.7%, Chinese 1.2%, Devanagari 1.4%, Japanese 2.3%, Korean 3.9%, Thai 4.3%, Cyrillic 4.7%. 261 of 262 digit strings exact; 414 of 432 lines found; reading order right for 391 of 392 consecutive pairs.</li>
+          <li><b>Memory:</b> 0.6 GB idle, up to 3 GB while reading two large pictures, given back after each. The first picture after a start adds about 1.3 s. It never unloads another model to make room for itself.</li>
+          <li><b>Weaknesses:</b> motion-blurred signs in video frames are often missed; spaces are sometimes dropped (<i>": RINA"</i> → <i>":RINA"</i>); vertical Japanese can lose a 、; full-width and half-width punctuation can be confused in CJK lines; look-alikes such as l and 1 in a monospace font (<i>Jl.</i> → <i>J1.</i>).</li>
+        </ul>
+
+        <h3 id="ocr-setup">Setup</h3>
+        <p>ocr-server is set up by hand from its own README, beside hemera. It reads with PaddleOCR's models in ONNX form, all from <code>huggingface.co/PaddlePaddle</code> under Apache-2.0, each pinned to a revision and checked by sha256 — 221 MB in all:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Model</th><th>Does</th><th>Size</th></tr></thead>
+            <tbody>
+              <tr><td><code>PP-OCRv6_medium_det_onnx</code> @ <code>61323801</code></td><td>Finds the lines</td><td>62.0 MB</td></tr>
+              <tr><td><code>PP-OCRv6_medium_rec_onnx</code> @ <code>50c7eaca</code></td><td>Reads Chinese, Japanese, English and 46 Latin-script languages</td><td>76.7 MB</td></tr>
+              <tr><td><code>korean_</code> <code>arabic_</code> <code>th_</code> <code>devanagari_</code> <code>cyrillic_</code> <code>el_</code> <code>ta_</code> <code>te_</code> + <code>PP-OCRv5_mobile_rec_onnx</code></td><td>Read the other eight scripts</td><td>7.8–13.5 MB each</td></tr>
+              <tr><td><code>PP-LCNet_x1_0_doc_ori_onnx</code> @ <code>7330ab70</code></td><td>The page's quarter turn</td><td>6.8 MB</td></tr>
+              <tr><td><code>PP-LCNet_x1_0_textline_ori_onnx</code> @ <code>7fdcf3cf</code></td><td>A line upside down</td><td>6.8 MB</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Optional: <code>PP-OCRv6_small_det</code> and <code>PP-OCRv6_small_rec</code> (31 MB) are twice as fast but read Latin worse — 2.7% of characters wrong instead of 0.3%. The engine needs Python 3.13 with numpy, ONNX Runtime, OpenCV (headless), Pillow, PyYAML and <code>regex</code>, all prebuilt wheels, and no GPU.</p>
+        <div class="term">
+          <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
+<pre>"engines": {
+  "hemera-ocr": {
+    "binaryPath": "/opt/ocr/venv/bin/python",
+    "argStyle": "custom",
+    "healthPath": "/health",
+    "gpu": false,                     <span class="c">// never needs GPU memory</span>
+    "defaultArgs": ["-I", "/opt/ocr/server/ocr_server.py",
+                    "--port", "{port}", "--models", "{file}"]
+  }
+},
+"models": [
+  { "name": "pp-ocrv6", "engine": "hemera-ocr", "task": "ocr",
+    "file": "/opt/ocr/models",
+    "args": ["--threads", "8", "--workers", "2", "--name", "pp-ocrv6"],
+    "keepAliveSeconds": 900,
+    "scripts": ["Latn", "Hani", "Jpan", "Hang", "Arab", "Thai",
+                "Deva", "Cyrl", "Grek", "Taml", "Telu"],
+    "charBoxes": "exact", "licence": "Apache-2.0 (PaddleOCR models)" }
+],
+"ocrModel": "pp-ocrv6",
+"ocrTimeoutSeconds": 60</pre>
+        </div>
+        <ul>
+          <li><b><code>"task": "ocr"</code></b> makes a model an OCR model and routes <code>/v1/ocr</code> to it; <code>ocrModel</code> names the default.</li>
+          <li><b><code>--workers</code></b> is how many pictures are read at once, each with <code>--threads</code> threads; <b><code>--name</code></b> is the model name the answers carry; <code>--det</code> and <code>--rec</code> choose other PP-OCR models, such as the small ones.</li>
+        </ul>
+        <p>Every field, the polygon convention for right-to-left and vertical lines, and how to draw a highlight on a photo taken askew: <a href="https://github.com/peprasetya/hemera/blob/main/docs/ocr-api.md">docs/ocr-api.md</a>.</p>
+      </section>
+
       <!-- ======================= API ======================= -->
       <section id="api">
         <h2>API surface</h2>
@@ -614,11 +749,11 @@ curl -X DELETE http://host:12434/v1/motion/generations/motion_3f9c…</pre>
               <tr><td><b>Ollama</b></td><td><code>/api/tags</code> <code>/api/ps</code> <code>/api/show</code> <code>/api/chat</code> <code>/api/generate</code> <code>/api/embed</code> <code>/api/delete</code> <code>/api/stop</code> <code>/api/version</code></td></tr>
               <tr><td><b>OpenAI</b></td><td><code>/v1/models</code> <code>/v1/chat/completions</code> <code>/v1/completions</code> <code>/v1/embeddings</code> <code>/v1/images/generations</code> <code>/v1/images/edits</code> <code>/v1/videos</code> <code>/v1/audio/transcriptions</code> <code>/v1/audio/translations</code> <code>/v1/audio/speech</code> <code>/v1/realtime</code></td></tr>
               <tr><td><b>Anthropic</b></td><td><code>/v1/messages</code> <code>/v1/messages/count_tokens</code></td></tr>
-              <tr><td><b>hemera</b></td><td><code>/v1/3d/generations</code> <code>/v1/motion/generations</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code> (WebSocket); admin under <code>/hemera/api/…</code></td></tr>
+              <tr><td><b>hemera</b></td><td><code>/v1/3d/generations</code> <code>/v1/motion/generations</code> <code>/v1/ocr</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code> (WebSocket); admin under <code>/hemera/api/…</code></td></tr>
             </tbody>
           </table>
         </div>
-        <p><b>Discovery.</b> Neither OpenAI's nor Ollama's model list says what a model is for, so hemera adds it in each dialect's own style. <code>/v1/models</code> entries carry a <code>hemera</code> object — <code>kind</code> (<code>text</code>, <code>image</code>, <code>video</code>, <code>3d</code>, <code>motion</code>, <code>transcription</code>, <code>speech</code>, <code>voice-changer</code>, <code>diarization</code>), the <code>endpoint</code> to call, and for ComfyUI models their <code>parameters</code> with types and ranges. <code>/api/tags</code> and <code>/api/show</code> add <code>image</code>, <code>video</code>, <code>3d</code>, <code>motion</code>, <code>transcription</code> and <code>speech</code> to Ollama's <code>capabilities</code>. Asking a model for the wrong thing is answered with the endpoint that would have worked.</p>
+        <p><b>Discovery.</b> Neither OpenAI's nor Ollama's model list says what a model is for, so hemera adds it in each dialect's own style. <code>/v1/models</code> entries carry a <code>hemera</code> object — <code>kind</code> (<code>text</code>, <code>image</code>, <code>video</code>, <code>3d</code>, <code>motion</code>, <code>ocr</code>, <code>transcription</code>, <code>speech</code>, <code>voice-changer</code>, <code>diarization</code>), the <code>endpoint</code> to call, and for ComfyUI models their <code>parameters</code> with types and ranges. <code>/api/tags</code> and <code>/api/show</code> add <code>image</code>, <code>video</code>, <code>3d</code>, <code>motion</code>, <code>ocr</code>, <code>transcription</code> and <code>speech</code> to Ollama's <code>capabilities</code>. Asking a model for the wrong thing is answered with the endpoint that would have worked.</p>
         <p><b>Cancelling images.</b> Send <code>"stream": true</code> and close the stream, or name the request with <code>X-Hemera-Request-Id</code> and <code>POST /hemera/api/images/cancel</code> with <code>{"id": "…"}</code>. Videos, 3D and motion jobs cancel with <code>DELETE</code>.</p>
         <p>The full contract for client authors — every field, the job objects, a client loop for video and 3D — is <a href="https://github.com/peprasetya/hemera/blob/main/docs/media-api.md">docs/media-api.md</a>.</p>
       </section>

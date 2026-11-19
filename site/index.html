@@ -11,7 +11,7 @@
   <meta property="og:image" content="https://aether.ing/aether.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='13' fill='%23f5b14c'/%3E%3Cg stroke='%23f5b14c' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="apple-touch-icon" href="../aether.png">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 <header class="nav">
@@ -126,7 +126,7 @@
             <li><b>Many binaries:</b> sd.cpp, whisper.cpp, audio.cpp, ds4, ollama's fork, your own</li>
             <li><b>Backend per model</b> — ROCm, Vulkan, CUDA, CPU, NPU on one machine</li>
             <li><b>A bridge to ComfyUI</b> for models that exist only as workflows</li>
-            <li><b>Its own 3D and motion APIs</b>, where OpenAI defines none</li>
+            <li><b>Its own 3D, motion and OCR APIs</b>, where OpenAI defines none</li>
             <li><b>Anthropic's API</b> too, and remote providers as local names</li>
           </ul>
         </div>
@@ -143,7 +143,7 @@
       <div class="head center reveal">
         <div class="eyebrow">What it serves</div>
         <h2>Not only text.</h2>
-        <p class="sub">Chat models sit next to image, video, 3D, motion and speech models in the same list. Each one says what it makes and which endpoint to call.</p>
+        <p class="sub">Chat models sit next to image, video, 3D, motion, speech and OCR models in the same list. Each one says what it makes and which endpoint to call.</p>
       </div>
       <div class="kinds">
         <div class="kind reveal">
@@ -173,6 +173,10 @@
         <div class="kind reveal">
           <div class="art art-ear"><i style="height:30px;animation-delay:-.3s"></i><i style="height:18px;animation-delay:-.7s"></i><i style="height:46px;animation-delay:-.1s"></i><i style="height:26px;animation-delay:-.5s"></i><i style="height:38px;animation-delay:-.9s"></i><i style="height:20px;animation-delay:-.2s"></i></div>
           <div class="body"><h3>Listening</h3><p>Transcription, translation, live dictation, and who said what.</p></div>
+        </div>
+        <div class="kind reveal">
+          <div class="art art-ocr"><i style="width:78%"></i><i style="width:62%"><b style="left:22%;width:52%"></b></i><i style="width:88%"></i><i style="width:46%"></i></div>
+          <div class="body"><h3>Text in pictures</h3><p>Every line, word and character placed, so a person can select and copy it.</p></div>
         </div>
       </div>
     </div>
@@ -389,7 +393,7 @@
         <div class="stat reveal"><b>MIT</b><span>Open-source licence</span></div>
         <div class="stat reveal"><b>~330 KB</b><span>One executable jar</span></div>
         <div class="stat reveal"><b>0</b><span>Dependencies — JDK only</span></div>
-        <div class="stat reveal"><b>1 port</b><span>Ollama · OpenAI · Anthropic · 3D · motion</span></div>
+        <div class="stat reveal"><b>1 port</b><span>Ollama · OpenAI · Anthropic · 3D · motion · OCR</span></div>
       </div>
     </div>
   </section>
