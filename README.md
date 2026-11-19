@@ -58,7 +58,7 @@ what configuring it needs. Applications such as [aether.ing](https://aether.ing)
 discover what a hemera server offers through its API.
 
 Zero dependencies: no Maven, no Gradle, no frameworks, no web server library — just a JDK 21+ and
-one jar of about 330 KB you can drop on any machine.
+one jar of about 370 KB you can drop on any machine.
 
 ## Supported engines
 
