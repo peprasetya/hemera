@@ -459,6 +459,20 @@ code
   background: var(--bg-2);
   color: var(--muted);
 }
+.tag.new
+{
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+h2 .tag.new
+{
+  font-size: 0.8rem;
+  padding: 3px 10px;
+}
 .tag.sun
 {
   border-color: color-mix(in srgb, var(--sun) 50%, transparent);

@@ -11,7 +11,7 @@
   <meta property="og:image" content="https://aether.ing/aether.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='13' fill='%23f5b14c'/%3E%3Cg stroke='%23f5b14c' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="apple-touch-icon" href="../aether.png">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <header class="nav">
@@ -25,6 +25,7 @@
       <a class="hide-sm" href="#features">Features</a>
       <a class="hide-sm" href="#comfyui">ComfyUI</a>
       <a class="hide-sm" href="#three">3D</a>
+      <a class="hide-sm" href="#motion">Motion</a>
       <a href="docs/">Docs</a>
       <a class="btn btn-ghost" href="https://github.com/peprasetya/hemera"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
     </nav>
@@ -35,7 +36,7 @@
   <!-- ======================= HERO ======================= -->
   <div class="hero">
     <div class="wrap">
-      <a class="pill" href="https://github.com/peprasetya/hemera/releases/latest"><b>RELEASE</b> 20261119 · ComfyUI's own templates as recipes →</a>
+      <a class="pill" href="#motion"><b>NEW</b> Text to motion · words in, a person's whole-body motion out →</a>
       <h1>Every engine. Every version.<br><span class="grad">One endpoint.</span></h1>
       <p class="lede">
         Hemera is a small, open-source router for local AI. It keeps many engine binaries — and many
@@ -49,7 +50,7 @@
       <div class="fine">MIT licensed · one 330 KB jar · JDK 21+ · zero dependencies</div>
 
       <div class="stage reveal">
-        <div class="window" role="img" aria-label="Clients such as the Ollama CLI, OpenAI SDKs, Claude Code and aether.ing talk to hemera on port 12434, which routes to llama.cpp builds, stable-diffusion.cpp, whisper.cpp, audio.cpp and ComfyUI">
+        <div class="window" role="img" aria-label="Clients such as the Ollama CLI, OpenAI SDKs, Claude Code and aether.ing talk to hemera on port 12434, which routes to llama.cpp builds, stable-diffusion.cpp, whisper.cpp, audio.cpp, motion and OCR engines, and ComfyUI">
           <div class="titlebar">
             <span class="dot"></span><span class="dot"></span><span class="dot"></span>
             <div class="url">http://hemera:12434/v1/models</div>
@@ -67,7 +68,7 @@
                 <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none" aria-hidden="true"><circle cx="32" cy="32" r="12" fill="currentColor"/><g stroke="currentColor" stroke-width="5" stroke-linecap="round"><path d="M32 4v8M32 52v8M4 32h8M52 32h8M12.2 12.2l5.7 5.7M46.1 46.1l5.7 5.7M12.2 51.8l5.7-5.7M46.1 17.9l5.7-5.7"/></g></svg>
                 <b>hemera</b>
                 <span class="port">:12434</span>
-                <div class="dialects"><span>Ollama</span><span>OpenAI</span><span>Anthropic</span><span>3D</span></div>
+                <div class="dialects"><span>Ollama</span><span>OpenAI</span><span>Anthropic</span><span>3D</span><span>Motion</span></div>
               </div>
             </div>
             <div class="col engines">
@@ -76,6 +77,7 @@
               <div class="node"><div class="row"><span>llama.cpp b10253</span><span class="tag ind">vulkan</span></div><small>qwen3-coder-long · pinned</small></div>
               <div class="node"><div class="row"><span>stable-diffusion.cpp</span><span class="tag">image · video</span></div><small>qwen-image-2.1</small></div>
               <div class="node"><div class="row"><span>whisper.cpp · audio.cpp</span><span class="tag ok">npu</span></div><small>whisper-large-v3 · voxcpm2-npu</small></div>
+              <div class="node"><div class="row"><span>motion-server</span><span class="tag new">new</span></div><small>hy-motion-1.0 → /v1/motion/generations</small></div>
               <div class="node"><div class="row"><span>ComfyUI</span><span class="tag sun">bridged</span></div><small>trellis_2 → /v1/3d/generations</small></div>
             </div>
           </div>
@@ -83,7 +85,7 @@
       </div>
 
       <div class="strip">
-        <span>Text · vision · embeddings</span><span>Image &amp; video</span><span>3D meshes</span><span>Speech in &amp; out</span><span>Remote APIs as local names</span>
+        <span>Text · vision · embeddings</span><span>Image &amp; video</span><span>3D meshes</span><span>Motion from words</span><span>Speech in &amp; out</span><span>Text in pictures</span><span>Remote APIs as local names</span>
       </div>
     </div>
   </div>
@@ -164,7 +166,7 @@
         </div>
         <div class="kind reveal">
           <div class="art art-motion"><svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="50" cy="16" r="9"/><path d="M50 27v30M50 57 38 86M50 57l14 27M50 36 30 50"/><path class="arm" d="M50 36l20-14"/><path d="M50 36l21-4M50 36l17 9" opacity=".3"/></svg></div>
-          <div class="body"><h3>Motion</h3><p>Words to a few seconds of whole-body motion, as JSON, glTF or BVH.</p></div>
+          <div class="body"><h3>Motion <span class="tag new">new</span></h3><p>Words to a few seconds of whole-body motion, as JSON, glTF or BVH.</p></div>
         </div>
         <div class="kind reveal">
           <div class="art art-voice"><i style="height:20px;animation-delay:-.1s"></i><i style="height:40px;animation-delay:-.5s"></i><i style="height:28px;animation-delay:-.3s"></i><i style="height:52px;animation-delay:-.8s"></i><i style="height:32px;animation-delay:-.2s"></i><i style="height:44px;animation-delay:-.6s"></i><i style="height:22px;animation-delay:-.4s"></i></div>
@@ -349,7 +351,7 @@
   <section id="motion" style="padding-top:24px">
     <div class="wrap">
       <div class="head reveal">
-        <div class="eyebrow">hemera's own endpoint, again</div>
+        <div class="eyebrow">New · hemera's own endpoint, again</div>
         <h2>Motion from words.</h2>
         <p class="sub">Ask for <i>"a slow twirl, arms out"</i> and get back 1 to 10 seconds of a person moving, for an app to play on its own character. OpenAI has nothing like it either, so it works like the 3D API: start a job, poll it, fetch the result, delete it.</p>
       </div>
