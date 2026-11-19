@@ -39,7 +39,7 @@ public final class OpenAiApi
 
   /**
    * Every model hemera can serve. Beyond OpenAI's four fields each entry carries a "hemera"
-   * object saying what the model is for — text, image, transcription, speech, video or 3d — which is all a client needs
+   * object saying what the model is for — text, image, transcription, speech, ocr, video or 3d — which is all a client needs
    * to pick the endpoint; for the models ComfyUI offers it also lists their request parameters.
    */
   private List<Object> models()
@@ -53,14 +53,15 @@ public final class OpenAiApi
       boolean spoken = ing.aether.hemera.engine.Engines.isSpeechModel(cfg, m);
       boolean speakers = ing.aether.hemera.engine.Engines.isDiarizationModel(cfg, m);
       boolean changer = ing.aether.hemera.engine.Engines.isVoiceChangerModel(cfg, m);
+      boolean reads = ing.aether.hemera.engine.Engines.isOcrModel(cfg, m);
       data.add(Json.map("id", Json.str(m, "name", "?"), "object", "model",
           "created", created, "owned_by", "hemera",
           "hemera", Json.map("kind", image ? "image" : heard ? "transcription" : spoken ? "speech"
-                  : speakers ? "diarization" : changer ? "voice-changer" : "text",
+                  : speakers ? "diarization" : changer ? "voice-changer" : reads ? "ocr" : "text",
               "backend", Json.str(m, "engine", "llama.cpp"),
               "endpoint", image ? "/v1/images/generations" : heard ? "/v1/audio/transcriptions"
                   : spoken ? "/v1/audio/speech" : speakers ? "/v1/audio/transcriptions"
-                  : changer ? "/v1/audio/voice-changer" : "/v1/chat/completions")));
+                  : changer ? "/v1/audio/voice-changer" : reads ? "/v1/ocr" : "/v1/chat/completions")));
     }
     for (Map<String, Object> p : cfg.proxies())
       data.add(Json.map("id", Json.str(p, "name", "?"), "object", "model",

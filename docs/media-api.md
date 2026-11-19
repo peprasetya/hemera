@@ -1,4 +1,4 @@
-# hemera media API — images, video, 3D and speech
+# hemera media API — images, video, 3D, speech and text in pictures
 
 Written for whoever builds a client on top of hemera (aether.ing first). It is self-contained:
 everything a client needs to discover what a hemera server can generate and to drive it.
@@ -55,7 +55,7 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
 
 | `hemera` field | Meaning |
 |---|---|
-| `kind` | `text`, `image`, `video`, `3d`, `transcription` (speech to text), `speech` (text to speech), `voice-changer`, or `diarization` (tells speakers apart; used through `transcription`) — what the model does. Group models by this. |
+| `kind` | `text`, `image`, `video`, `3d`, `transcription` (speech to text), `speech` (text to speech), `voice-changer`, `diarization` (tells speakers apart; used through `transcription`), or `ocr` (reads the text in pictures, with where it is: [ocr-api.md](ocr-api.md)) — what the model does. Group models by this. |
 | `endpoint` | Where to send a generation request for this model. |
 | `backend` | `llama.cpp`, `sd.cpp`, `audio.cpp`, `audio.cpp-npu`, `proxy`, `comfyui`, … Informational. |
 | `family`, `title`, `description` | ComfyUI models only. `title` and `description` are fit to show to a user. |
@@ -494,5 +494,8 @@ built from `hemera.parameters`.
   runs on the NPU: the LLM keeps generating there, at the same voice quality.
 - **Speech requests queue too.** A speech model works on one recording at a time; requests made
   together are answered one after another (three short utterances: 0.3, 0.6 and 0.9 s).
+- **Text in pictures** has its own API, `POST /v1/ocr` ([ocr-api.md](ocr-api.md)): lines, words
+  and characters with their polygons, in reading order. It runs on the CPU, so it never waits for
+  the GPU: about a second for a phone screenshot.
 - **Text models** are a separate matter: `/v1/chat/completions` (OpenAI), `/v1/messages`
   (Anthropic) and `/api/chat` (Ollama) all work, with streaming.

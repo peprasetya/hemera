@@ -68,6 +68,7 @@ one jar of about 330 KB you can drop on any machine.
 | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | images, edits, video | managed, like llama.cpp | Vulkan, ROCm | `/v1/images/*` `/v1/videos` |
 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) `whisper-server` | transcription, translation, live dictation | `binaryPath` (build with `-DGGML_VULKAN=ON`) | Vulkan, CPU | `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/realtime` |
 | [audio.cpp](https://github.com/0xShug0/audio.cpp) `audiocpp_server` | text to speech, diarization, voice conversion | `binaryPath` | Vulkan, XDNA NPU, CPU | `/v1/audio/speech` `/v1/audio/voices` `/v1/audio/voice-changer` |
+| hemera's OCR engine `engines/ocr/ocr_server.py` (PaddleOCR models on ONNX Runtime) | text in pictures, with positions | `binaryPath` (a Python venv) | CPU | `/v1/ocr` |
 | ollama's bundled `llama-server` | models upstream llama.cpp rejects yet, embedded vision towers | `binaryPath` + `libraryPaths` | ROCm, Vulkan, CUDA | as llama.cpp |
 | [ds4](https://github.com/antirez/ds4), any OpenAI-style server | whatever it serves | **Add engine** / `binaryPath` | your build | as llama.cpp |
 | [ComfyUI](https://github.com/comfyanonymous/ComfyUI) | image, video and 3D workflows | bridged, not managed | whatever it runs on | `/v1/images/*` `/v1/videos` `/v1/3d/generations` |
@@ -236,7 +237,7 @@ editable under Settings; `libraryAutoDetect: false` turns the search off entirel
 |---|---|
 | Ollama | `/api/tags` `/api/ps` `/api/show` `/api/chat` `/api/generate` `/api/embed` `/api/delete` `/api/stop` `/api/version` |
 | OpenAI | `/v1/models` `/v1/chat/completions` `/v1/completions` `/v1/embeddings` `/v1/images/generations` `/v1/images/edits` `/v1/videos` `/v1/audio/transcriptions` `/v1/audio/translations` `/v1/audio/speech` `/v1/realtime` (transcription) |
-| hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint), `/v1/audio/voices` (the voice library), `/v1/audio/voice-changer` (WebSocket); see [docs/media-api.md](docs/media-api.md) |
+| hemera | `/v1/3d/generations` (OpenAI has no 3D endpoint), `/v1/audio/voices` (the voice library), `/v1/audio/voice-changer` (WebSocket); see [docs/media-api.md](docs/media-api.md). `/v1/ocr` (the text in pictures, with lines, words and characters placed); see [docs/ocr-api.md](docs/ocr-api.md) |
 | Anthropic | `/v1/messages` `/v1/messages/count_tokens` |
 
 **What is each model for?** A server now holds chat models next to image, video, 3D and speech ones, and

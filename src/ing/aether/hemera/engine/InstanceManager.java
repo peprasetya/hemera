@@ -159,10 +159,14 @@ public final class InstanceManager
     int port = freePort();
     String file = Config.expandUser(Json.str(model, "file", ""));
     String mmproj = Config.expandUser(Json.str(model, "mmproj", ""));
+    // A model off the GPU leaves ComfyUI's models where they are. An OCR model is small, and
+    // never unloads another (an assistant's model above all) to make room for itself; it is the
+    // one unloaded when it sits idle and a model that needs room comes along.
     Runnable release = gpuReleaser;
-    if (release != null)
+    if (release != null && Engines.usesGpu(cfg, model))
       release.run();
-    makeRoom(name, estimate(model, file, mmproj));
+    if (!Engines.isOcrModel(cfg, model))
+      makeRoom(name, estimate(model, file, mmproj));
 
     List<String> cmd = new ArrayList<>();
     cmd.add(bin);
@@ -401,17 +405,22 @@ public final class InstanceManager
   }
 
   /**
-   * Unload every engine so ComfyUI has the GPU to itself. An engine still answering a request is
-   * waited for rather than cut off.
+   * Unload every engine on the GPU so ComfyUI has it to itself. An engine still answering a request
+   * is waited for rather than cut off. Engines on the CPU or the NPU stay: they are small, and
+   * unloading them would give ComfyUI little while cutting off whoever uses them (OCR, NPU speech).
    */
   public void clearGpu(long maxWaitSeconds)
   {
     long deadline = System.currentTimeMillis() + maxWaitSeconds * 1000;
-    while (instances.values().stream().anyMatch(i -> i.alive() && i.busy())
+    java.util.function.Predicate<Instance> onGpu = i -> {
+      Map<String, Object> m = cfg.findModel(i.name);
+      return m == null || Engines.usesGpu(cfg, m);
+    };
+    while (instances.values().stream().anyMatch(i -> i.alive() && i.busy() && onGpu.test(i))
         && System.currentTimeMillis() < deadline)
       try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
     for (Instance i : List.copyOf(instances.values()))
-      if (!i.busy())
+      if (!i.busy() && onGpu.test(i))
       {
         Log.info("instance", "Unloading '" + i.name + "' so ComfyUI has the GPU to itself");
         stop(i.name);
@@ -637,15 +646,6 @@ public final class InstanceManager
   private int speaking;
   private long speechRun;
 
-  /** Unless its arguments say --backend npu or cpu, a speech engine is taken to be on the GPU. */
-  private boolean speaksOnGpu(Map<String, Object> model)
-  {
-    List<String> args = new ArrayList<>(Json.strList(cfg.engine(Json.str(model, "engine", "")), "defaultArgs"));
-    args.addAll(Json.strList(model, "args"));
-    int at = args.lastIndexOf("--backend");
-    return at < 0 || at + 1 >= args.size() || !List.of("npu", "cpu").contains(args.get(at + 1));
-  }
-
   /**
    * Freeze the running llama.cpp engines (SIGSTOP) until the returned action is run. On one GPU
    * under Vulkan an LLM crowds out speech almost completely: measured, voxcpm2 fell from 2.4x
@@ -658,7 +658,7 @@ public final class InstanceManager
    */
   public Runnable pauseLlmsForSpeech(Map<String, Object> model)
   {
-    if (!Json.bool(cfg.data(), "speechPausesLlm", true) || !speaksOnGpu(model))
+    if (!Json.bool(cfg.data(), "speechPausesLlm", true) || !Engines.usesGpu(cfg, model))
       return () -> {};
     synchronized (speechLock)
     {

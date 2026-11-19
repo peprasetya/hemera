@@ -132,6 +132,27 @@ public final class Engines
         && "vc".equals(Json.str(model, "task", "tts"));
   }
 
+  /** A text-recognition model: reads text in pictures, with where it is; its entry says "task": "ocr". */
+  public static boolean isOcrModel(Config cfg, Map<String, Object> model)
+  {
+    return "ocr".equals(Json.str(model, "task", ""));
+  }
+
+  /**
+   * Whether an engine holds memory on the GPU. Not when its engine or model entry says
+   * "gpu": false, nor when its arguments say --backend npu or cpu.
+   */
+  public static boolean usesGpu(Config cfg, Map<String, Object> model)
+  {
+    Map<String, Object> engine = cfg.engine(Json.str(model, "engine", ""));
+    if (!Json.bool(model, "gpu", Json.bool(engine, "gpu", true)))
+      return false;
+    List<String> args = new java.util.ArrayList<>(Json.strList(engine, "defaultArgs"));
+    args.addAll(Json.strList(model, "args"));
+    int at = args.lastIndexOf("--backend");
+    return at < 0 || at + 1 >= args.size() || !List.of("npu", "cpu").contains(args.get(at + 1));
+  }
+
   /** Refuse to route a chat/completion/embedding request to an image or speech model with a useful message. */
   public static void requireTextModel(Config cfg, Map<String, Object> model)
   {
@@ -150,6 +171,9 @@ public final class Engines
     if (isVoiceChangerModel(cfg, model))
       throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' changes voices — connect to the "
           + "/v1/audio/voice-changer WebSocket");
+    if (isOcrModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' reads text in pictures — "
+          + "use POST /v1/ocr");
   }
 
   /** The speech endpoint only makes sense against a text-to-speech entry on audio.cpp. */
