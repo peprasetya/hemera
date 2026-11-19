@@ -1,4 +1,4 @@
-# hemera media API — images, video, 3D, speech and text in pictures
+# hemera media API — images, video, 3D, speech, text in pictures and motion
 
 Written for whoever builds a client on top of hemera (aether.ing first). It is self-contained:
 everything a client needs to discover what a hemera server can generate and to drive it.
@@ -38,6 +38,9 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
     { "id": "voxcpm2-npu", "object": "model", "created": 1791656743, "owned_by": "hemera",
       "hemera": { "kind": "speech", "backend": "audio.cpp-npu", "endpoint": "/v1/audio/speech" } },
 
+    { "id": "hy-motion-1.0", "object": "model", "created": 1791656743, "owned_by": "hemera",
+      "hemera": { "kind": "motion", "backend": "motion-server", "endpoint": "/v1/motion/generations" } },
+
     { "id": "pixal3d_bf16", "object": "model", "created": 1791656743, "owned_by": "comfyui",
       "hemera": {
         "kind": "3d", "backend": "comfyui", "family": "pixal3d", "title": "Pixal3D",
@@ -55,7 +58,7 @@ The list is OpenAI-shaped, and every entry also carries a `hemera` object:
 
 | `hemera` field | Meaning |
 |---|---|
-| `kind` | `text`, `image`, `video`, `3d`, `transcription` (speech to text), `speech` (text to speech), `voice-changer`, `diarization` (tells speakers apart; used through `transcription`), or `ocr` (reads the text in pictures, with where it is: [ocr-api.md](ocr-api.md)) — what the model does. Group models by this. |
+| `kind` | `text`, `image`, `video`, `3d`, `transcription` (speech to text), `speech` (text to speech), `voice-changer`, `diarization` (tells speakers apart; used through `transcription`), `ocr` (reads the text in pictures, with where it is: [ocr-api.md](ocr-api.md)), or `motion` (a person's whole-body motion from words: section 10) — what the model does. Group models by this. |
 | `endpoint` | Where to send a generation request for this model. |
 | `backend` | `llama.cpp`, `sd.cpp`, `audio.cpp`, `audio.cpp-npu`, `proxy`, `comfyui`, … Informational. |
 | `family`, `title`, `description` | ComfyUI models only. `title` and `description` are fit to show to a user. |
@@ -497,5 +500,117 @@ built from `hemera.parameters`.
 - **Text in pictures** has its own API, `POST /v1/ocr` ([ocr-api.md](ocr-api.md)): lines, words
   and characters with their polygons, in reading order. It runs on the CPU, so it never waits for
   the GPU: about a second for a phone screenshot.
+- **Motion** (section 10) takes about 6 s a clip, whatever its length. The first clip after the
+  model was unloaded also waits for it to load (34–43 s). It holds about 21 GB while loaded,
+  beside the chat models, and is unloaded after 10 idle minutes.
 - **Text models** are a separate matter: `/v1/chat/completions` (OpenAI), `/v1/messages`
   (Anthropic) and `/api/chat` (Ollama) all work, with streaming.
+
+## 10. Motion — `/v1/motion/generations`
+
+Words go in ("a slow twirl, arms out") and a few seconds of a person's whole-body motion come out,
+on a documented skeleton, for a client to play on its own figure. OpenAI defines no such endpoint,
+so this is hemera's own, with the same lifecycle as 3D. The model is `hy-motion-1.0` (kind
+`motion`), Tencent's HY-Motion 1.0. Its engine, the motion server, answers this API itself;
+hemera starts it on first use and passes requests and answers through unchanged.
+
+| Call | Purpose |
+|---|---|
+| `POST /v1/motion/generations` | Start a clip (JSON). Answers at once with the job: `id`, `status`. |
+| `GET /v1/motion/generations/{id}` | `status`, `progress`, `error`. |
+| `GET /v1/motion/generations/{id}/content?format=json` | The motion: `json` (default), `glb` or `bvh`. `409` until completed. |
+| `DELETE /v1/motion/generations/{id}` | Cancel a clip being made, or drop a finished one. Nothing of it is kept afterwards. |
+| `GET /v1/motion/generations` | The clips still held, newest first. |
+
+```bash
+curl http://host:12434/v1/motion/generations -H 'Content-Type: application/json' -d '{
+  "model": "hy-motion-1.0", "prompt": "a person waves with the right hand", "duration": 4 }'
+# {"id": "motion_3f9c...", "object": "motion.generation", "status": "queued", "progress": 0, ...}
+curl http://host:12434/v1/motion/generations/motion_3f9c...
+curl 'http://host:12434/v1/motion/generations/motion_3f9c.../content?format=glb' -o wave.glb
+```
+
+| Field | Meaning |
+|---|---|
+| `prompt` | Required. How the body moves, in English, at most about 60 words. One or two actions work best ("a person waves with the right hand raised above the head"). Appearance, emotions on their own, objects, scenery and other people are not understood. A longer prompt is cut at 128 tokens, and the job then says `"prompt_truncated": true`. |
+| `duration` | Seconds, from 1 to 10. Default 4. |
+| `fps` | Frames a second, from 1 to 120. Default 30, the model's own rate; others are resampled. |
+| `seed` | From 0 to 4294967295. Default: drawn and reported back, so a clip can be made again. |
+| `loop` | `true`: the clip ends exactly as it began, in pose, place and heading, for an idle. Default `false`. |
+| `constraints` | Not taken by this model (400). |
+| `model` | `hy-motion-1.0`. It may be left out: hemera then uses its default motion model. |
+
+The job object:
+
+```json
+{ "id": "motion_3f9c0e2d8b1a4c55", "object": "motion.generation", "model": "hy-motion-1.0",
+  "status": "completed", "progress": 100, "created_at": 1795085863, "completed_at": 1795085869,
+  "duration": 4.0, "fps": 30, "frames": 120, "loop": false, "seed": 11,
+  "timing_ms": { "text": 394, "sample": 5321, "decode": 104, "total": 5828 },
+  "output": { "formats": ["json", "glb", "bvh"], "url": "/v1/motion/generations/motion_3f9c0e2d8b1a4c55/content" } }
+```
+
+- `status`: `queued` → `in_progress` → `completed` | `failed` | `cancelled`. `progress` runs
+  0–100 evenly over the model's 50 steps.
+- `error` (`{"code", "message"}`) appears on failure.
+- Clips are kept in the engine's memory for an hour, or until deleted, or until the model is
+  stopped (`POST /hemera/api/models/stop`). **Fetch the motion when it completes, keep it
+  yourself, and DELETE it.**
+
+### The motion, as JSON
+
+```json
+{ "object": "motion", "model": "hy-motion-1.0", "fps": 30, "frame_count": 120, "duration": 4.0,
+  "loop": false, "seed": 11,
+  "skeleton": {
+    "joints":  ["Pelvis", "L_Hip", "R_Hip", "Spine1", "L_Knee", "R_Knee", "Spine2", "L_Ankle", "R_Ankle",
+                "Spine3", "L_Foot", "R_Foot", "Neck", "L_Collar", "R_Collar", "Head", "L_Shoulder",
+                "R_Shoulder", "L_Elbow", "R_Elbow", "L_Wrist", "R_Wrist"],
+    "parents": [-1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 12, 13, 14, 16, 17, 18, 19],
+    "offsets": [[-0.0018, 0.97017, 0.02822], [0.08237, -0.08994, -0.0031], ...],
+    "units": "metres", "up": "+Y", "forward": "+Z", "left": "+X" },
+  "frames": [
+    { "translation": [0.0, 0.97616, 0.0], "rotations": [[0.024122, -6.6e-05, 0.002753, 0.999705], ...] },
+    ... ] }
+```
+
+- **`skeleton`:** SMPL's 22 body joints, in SMPL's order, with each joint's parent (`-1` for the
+  root) and its rest offset from that parent, in metres.
+  - The root's offset is where it stands in the rest pose, above the ground origin.
+  - The rest pose is a T-pose standing on y = 0. The body faces +Z, +Y is up, and the person's
+    own left is +X: SMPL's convention, and glTF's.
+  - There are no finger joints: the model does not move fingers.
+- **`frames`:** one per frame, `frame_count` = `duration` × `fps`.
+  - `translation` is the root joint (the pelvis) in the world, in metres. It replaces the root's
+    rest offset.
+  - `rotations` holds each joint's local rotation from its rest pose, as a unit quaternion
+    (x, y, z, w). The root's is its rotation in the world.
+  - A joint's world rotation is `R = R_parent · r`, and its position is
+    `p = p_parent + R_parent · offset`.
+- **Placement:** the first frame stands at x = z = 0 facing +Z. The body's lowest point over the
+  clip touches y = 0.
+- **`loop: true`:** the last frame is the first. A quaternion and its negation are the same
+  rotation, so compare rotations rather than numbers.
+- **`glb`:** the same skeleton as a skin, with a stick-figure mesh and one animation named
+  `motion` (translation on the root, rotation on each joint, linear). Blender, three.js and
+  `<model-viewer>` open it.
+- **`bvh`:** in metres, +Y up. The root's channels are its position in the world, and rotations
+  are Euler ZXY in degrees.
+
+### Times, memory, and what it does badly
+
+- **Time:** about 6 s a clip, whatever its length (1 s or 10 s, 30 or 60 fps). The first clip
+  after the model was unloaded also waits for it to load (34–43 s). A POST that would wait more
+  than 90 s answers 503 with `Retry-After`.
+- **Memory:** about 21 GB of GPU memory while loaded, which fits beside the chat models. hemera
+  unloads it after 10 idle minutes, and first if another model needs the room.
+- **Weaknesses:**
+  - Fingers do not move.
+  - Hands meant to touch the body or a seat come close, but may hover or pass in.
+  - Planted feet slide when the body travels or turns (up to 20–30 cm in a step), and can float
+    1–2 cm. Standing still is clean.
+  - Counts and amounts are followed loosely: "a slow twirl" made a half turn.
+- **Privacy:** prompts are never logged (only their length is), clips live only in memory, and
+  nothing leaves the machine.
+- **Licence:** HY-Motion 1.0 is under Tencent's community licence. It does not apply in the EU,
+  the UK or South Korea, and its outputs may not be used to improve other AI models.

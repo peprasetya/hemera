@@ -1,6 +1,6 @@
-# Integrating hemera's speech and Live Text into spatiand
+# Integrating hemera's speech, Live Text and motion into spatiand
 
-A hand-off note for whoever builds voice and Live Text into spatiand, the stereoscopic 3D desktop (macOS,
+A hand-off note for whoever builds voice, Live Text and pals' motion into spatiand, the stereoscopic 3D desktop (macOS,
 Steam Deck, Android on the XREAL Beam Pro). It stands alone; the full API reference is
 [media-api.md](media-api.md) (in the hemera repository, `docs/media-api.md`).
 
@@ -16,7 +16,8 @@ devices only capture and play audio.
 Models by `hemera.kind` from `GET /v1/models` (read the list; names can change):
 `transcription` → `whisper-large-v3-turbo` for dictation; `voice-changer` → `meanvc2`;
 `text` → chat models for clean-up; `speech` → `voxcpm2` if spatiand ever needs to talk;
-`ocr` → `pp-ocrv6` for the text in pictures (section 4).
+`ocr` → `pp-ocrv6` for the text in pictures (section 4); `motion` → `hy-motion-1.0` for pals' moves
+(section 5).
 
 ## 1. Contextual dictation
 
@@ -204,13 +205,101 @@ hemera's own conventions, which Live Text follows:
 Everything else is as asked: the options, the answer's fields, the polygon convention, grapheme
 clusters, the limits, and 503 with `Retry-After`.
 
+## 5. Pals' moves: motion from words (SpatiPal)
+
+hemera turns words into a few seconds of a person's whole-body motion, and the room plays it on a
+pal's figure. The reference is [media-api.md](media-api.md), section 10. Fitting the motion onto a
+pal's own skeleton, playing it, and SpatiPal's tool for asking for a move are spatiand's.
+
+### The request
+
+```rust
+let job = hemera.post_json("/v1/motion/generations", &json!({
+    "model": "hy-motion-1.0", "prompt": "a person waves with the right hand", "duration": 4, "loop": false
+}), Duration::from_secs(120))?;
+// poll GET /v1/motion/generations/{id} every half second until "status" is "completed"
+let motion = hemera.get_json(&format!("/v1/motion/generations/{id}/content"))?; // format=json, the default
+// then DELETE /v1/motion/generations/{id}: hemera keeps nothing of it after that
+```
+
+- **The words.** Write the prompt in English and describe how the body moves: one or two actions,
+  at most about 60 words. "a slow twirl, arms out" works as it is. When a pal's model asks for a
+  move in another language or in looser words, have it write this sentence.
+- **`duration`:** 1 to 10 s, default 4. **`fps`:** default 30.
+- **`loop: true`** suits an idle: the clip ends exactly as it began, in pose, place and heading.
+- **`seed`** comes back with every job. Keep it with the prompt, and a move a pal liked can be made
+  again exactly.
+
+### Playing it on a pal
+
+- **The skeleton:** SMPL's 22 body joints, by name. The rest pose is a T-pose on y = 0, facing +Z,
+  with the person's own left at +X: glTF's convention. A VRM 0.x faces -Z; `figure::facing` says
+  which.
+- **Onto `figure::bodies`:**
+  - hips ← `Pelvis`;
+  - spine ← `Spine1`, `Spine2`, `Spine3`;
+  - neck ← `Neck`, `Head`;
+  - arms, its own left first: shoulder ← `L_Collar`, upper arm ← `L_Shoulder`, forearm ←
+    `L_Elbow`, hand ← `L_Wrist`;
+  - legs: thigh ← `L_Hip`, shin ← `L_Knee`, foot ← `L_Ankle`, toes ← `L_Foot`.
+
+  In SMPL, a joint's rotation turns the bone that leaves it: `L_Shoulder`'s turns the upper arm.
+- **Rest poses differ.** The rotations are from SMPL's T-pose, with the arms out level; most pals
+  rest in an A-pose. A bone's world rotation in the motion (its parents' local rotations times
+  its own) is how far it turned from the T-pose. Apply that to where the bone points in a T-pose
+  of the figure. Or aim each part where the motion's bone points, frame by frame, as the room's
+  posing already aims parts.
+- **The root:** `translation` is the pelvis, in metres, and the clip starts at the origin facing
+  +Z. Scale it by the pal's hip height over the skeleton's (0.97 m) to keep the feet on the
+  ground.
+- **Hands and feet:** there are no finger joints, so keep the figure's own hands. Planted feet
+  can slide when the body turns or travels; plant them with IK if it shows.
+
+### Times, and errors
+
+- **Time:** about 6 s a clip once the model is loaded, whatever its length. The first clip after
+  10 idle minutes also loads the model: 34–43 s, during which the POST waits (up to 90 s, then
+  503 with `Retry-After`).
+- **Memory:** it holds about 21 GB beside the chat models while loaded.
+- **Errors:** `{"error": "<message fit to show a user>"}`.
+  - 400: no prompt, a duration outside 1–10 s, or constraints.
+  - 404: an unknown id, or one dropped (after DELETE, after an hour, or when the model was
+    stopped).
+  - 409: the content was asked for before the clip was made.
+  - 503: the model is loading.
+- **Privacy:** prompts are never logged, only their length. A clip lives in memory until DELETE.
+- **What it does badly:**
+  - Fingers do not move.
+  - Hands meant to touch the body or a seat come close, but may hover or pass in.
+  - Planted feet slide up to 20–30 cm a step when the body travels or turns, and can float
+    1–2 cm.
+  - Amounts are followed loosely: "a slow twirl" made a half turn, and "spins slowly in a full
+    circle" two to three fast turns.
+  - Sitting happens on a chair nobody sees.
+
+### Where this differs from the request
+
+- **`duration`** defaults to 4 s when it is left out.
+- **No `constraints`:** HY-Motion takes none, so sending them gets a 400.
+- **`loop`** is made by the motion server, as HY-Motion has no loop mode. It generates a little
+  more and blends the end into the start.
+- **No hands:** HY-Motion does not move fingers, so the skeleton has only the 22 body joints.
+- **The rest offsets** come from HY-Motion's own body template, SMPL's 22-joint layout as Tencent
+  ships it.
+- **Extra JSON fields:** `frame_count`, `duration`, `loop`, `seed`, and the skeleton's `units`,
+  `up`, `forward` and `left`. A frame is `{"translation", "rotations"}`.
+- **More than asked:** a `bvh` format, and `GET /v1/motion/generations` lists the clips held.
+- **Placement:** the first frame is moved to the origin, facing +Z.
+
 ## What stays in spatiand
 
 Microphone capture, push-to-talk input, collecting the focus context, spoken-symbol rules and the
 clean-up prompt, inserting text into the focused app, the virtual microphone, voice picking UI,
 and reconnecting if the network drops. For Live Text: choosing the picture or frame, drawing the
-highlights and the selection, copying, and translating. hemera stores nothing from these sessions,
-and keeps no picture or text once it has answered.
+highlights and the selection, copying, and translating. For pals' moves: SpatiPal's tool that asks
+for a move, mapping the motion onto the pal's body, playing and blending it, and keeping the moves
+a pal likes. hemera stores nothing from these sessions, keeps no picture or text once it has
+answered, and drops a motion when it is deleted.
 
 ## Quick checks
 
@@ -218,6 +307,8 @@ and keeps no picture or text once it has answered.
 curl -s http://deepmagpie:12434/v1/models | jq '.data[] | select(.hemera.kind=="transcription" or .hemera.kind=="voice-changer") | .id'
 curl -s http://deepmagpie:12434/v1/audio/voices | jq '.data[].id'
 curl -s -F image=@screenshot.png -F 'options={"languages":["id","auto"]}' http://deepmagpie:12434/v1/ocr | jq -r .text
+curl -s http://deepmagpie:12434/v1/motion/generations -H 'Content-Type: application/json' -d '{"prompt":"a person waves with the right hand","duration":4}' | jq -r .id
+curl -s http://deepmagpie:12434/v1/motion/generations/<id> | jq .status
 # a WebSocket smoke test, if websocat is installed:
 websocat -t "ws://deepmagpie:12434/v1/realtime?intent=transcription" --protocol realtime
 ```

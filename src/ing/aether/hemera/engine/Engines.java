@@ -138,6 +138,12 @@ public final class Engines
     return "ocr".equals(Json.str(model, "task", ""));
   }
 
+  /** A text-to-motion model: words in, a person's whole-body motion out; its entry says "task": "motion". */
+  public static boolean isMotionModel(Config cfg, Map<String, Object> model)
+  {
+    return "motion".equals(Json.str(model, "task", ""));
+  }
+
   /**
    * Whether an engine holds memory on the GPU. Not when its engine or model entry says
    * "gpu": false, nor when its arguments say --backend npu or cpu.
@@ -174,6 +180,9 @@ public final class Engines
     if (isOcrModel(cfg, model))
       throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' reads text in pictures — "
           + "use POST /v1/ocr");
+    if (isMotionModel(cfg, model))
+      throw new HttpError(400, "model '" + Json.str(model, "name", "?") + "' makes motion — "
+          + "use POST /v1/motion/generations");
   }
 
   /** The speech endpoint only makes sense against a text-to-speech entry on audio.cpp. */

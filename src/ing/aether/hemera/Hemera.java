@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import ing.aether.hemera.api.AudioApi;
 import ing.aether.hemera.api.ClaudeApi;
 import ing.aether.hemera.api.ImagesApi;
+import ing.aether.hemera.api.MotionApi;
 import ing.aether.hemera.api.OcrApi;
 import ing.aether.hemera.api.OllamaApi;
 import ing.aether.hemera.api.OpenAiApi;
@@ -107,6 +108,7 @@ public final class Hemera
     new SpeechApi(cfg, im, audio, router);
     new VoiceChangerApi(cfg, im, audio, router);
     new OcrApi(cfg, im, router);
+    new MotionApi(cfg, im, router);
     new ClaudeApi(cfg, im, proxies, router);
     new AdminApi(cfg, im, registry, comfy, router);
     new StaticFiles(router);

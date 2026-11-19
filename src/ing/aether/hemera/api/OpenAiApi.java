@@ -54,14 +54,16 @@ public final class OpenAiApi
       boolean speakers = ing.aether.hemera.engine.Engines.isDiarizationModel(cfg, m);
       boolean changer = ing.aether.hemera.engine.Engines.isVoiceChangerModel(cfg, m);
       boolean reads = ing.aether.hemera.engine.Engines.isOcrModel(cfg, m);
+      boolean moves = ing.aether.hemera.engine.Engines.isMotionModel(cfg, m);
       data.add(Json.map("id", Json.str(m, "name", "?"), "object", "model",
           "created", created, "owned_by", "hemera",
           "hemera", Json.map("kind", image ? "image" : heard ? "transcription" : spoken ? "speech"
-                  : speakers ? "diarization" : changer ? "voice-changer" : reads ? "ocr" : "text",
+                  : speakers ? "diarization" : changer ? "voice-changer" : reads ? "ocr" : moves ? "motion" : "text",
               "backend", Json.str(m, "engine", "llama.cpp"),
               "endpoint", image ? "/v1/images/generations" : heard ? "/v1/audio/transcriptions"
                   : spoken ? "/v1/audio/speech" : speakers ? "/v1/audio/transcriptions"
-                  : changer ? "/v1/audio/voice-changer" : reads ? "/v1/ocr" : "/v1/chat/completions")));
+                  : changer ? "/v1/audio/voice-changer" : reads ? "/v1/ocr"
+                  : moves ? "/v1/motion/generations" : "/v1/chat/completions")));
     }
     for (Map<String, Object> p : cfg.proxies())
       data.add(Json.map("id", Json.str(p, "name", "?"), "object", "model",
