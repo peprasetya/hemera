@@ -77,7 +77,7 @@
               <div class="node"><div class="row"><span>llama.cpp b10253</span><span class="tag ind">vulkan</span></div><small>qwen3-coder-long · pinned</small></div>
               <div class="node"><div class="row"><span>stable-diffusion.cpp</span><span class="tag">image · video</span></div><small>qwen-image-2.1</small></div>
               <div class="node"><div class="row"><span>whisper.cpp · audio.cpp</span><span class="tag ok">npu</span></div><small>whisper-large-v3 · voxcpm2-npu</small></div>
-              <div class="node"><div class="row"><span>motion-server</span><span class="tag new">new</span></div><small>hy-motion-1.0 → /v1/motion/generations</small></div>
+              <div class="node"><div class="row"><span>hemera-motion-server</span><span class="tag new">new</span></div><small>hy-motion-1.0 → /v1/motion/generations</small></div>
               <div class="node"><div class="row"><span>ComfyUI</span><span class="tag sun">bridged</span></div><small>trellis_2 → /v1/3d/generations</small></div>
             </div>
           </div>
@@ -363,7 +363,7 @@
             <li><b>Idles that loop.</b> <code>"loop": true</code> ends exactly where the clip began.</li>
             <li><b>About six seconds a clip</b> on a Strix Halo, beside the chat models. Prompts are never logged and clips never leave the machine.</li>
           </ul>
-          <a class="more" href="docs/#motion">Motion API reference →</a>
+          <a class="more" href="docs/#motion">Motion API reference →</a> &nbsp; <a class="more" href="https://github.com/peprasetya/hemera-motion-server">The engine on GitHub →</a>
         </div>
         <div class="term reveal">
           <div class="bar"><span>words → motion</span></div>
@@ -389,7 +389,7 @@
       <div class="head reveal">
         <div class="eyebrow">Open and small</div>
         <h2>A router, not an application.</h2>
-        <p class="sub">Every engine is a separate program in its own project, like llama.cpp or stable-diffusion.cpp. Hemera starts it, passes requests and answers through unchanged, and stops it. It has no gallery, no chat window and no viewer beyond what configuring it needs: apps such as <a href="https://aether.ing">aether.ing</a> sit on top and discover what a server offers through its API.</p>
+        <p class="sub">Every engine is a separate program in its own project, like llama.cpp or stable-diffusion.cpp. Hemera starts it, passes requests and answers through unchanged, and stops it. Three engines are ours, each in its own repository: <a href="https://github.com/peprasetya/hemera-ocr-server">hemera-ocr-server</a>, <a href="https://github.com/peprasetya/hemera-motion-server">hemera-motion-server</a> and <a href="https://github.com/peprasetya/hemera-audio.cpp">hemera-audio.cpp</a>, audio.cpp on AMD's NPU. It has no gallery, no chat window and no viewer beyond what configuring it needs: apps such as <a href="https://aether.ing">aether.ing</a> sit on top and discover what a server offers through its API.</p>
       </div>
       <div class="stack">
         <div class="stat reveal"><b>MIT</b><span>Open-source licence</span></div>

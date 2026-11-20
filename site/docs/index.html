@@ -177,7 +177,7 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
       <section id="engines">
         <h2>Engines</h2>
         <p class="section-lede">An engine is a server binary hemera starts on demand, one process per loaded model. <b>Managed</b> engines are downloaded from their GitHub releases and version-tracked; <b>custom</b> engines are a binary path you provide.</p>
-        <div class="callout"><b>Hemera is only a router.</b> Every engine is a separate program in its own project, like llama.cpp or stable-diffusion.cpp: hemera starts it, passes requests and answers through unchanged, and stops it. Hemera's downloader installs llama.cpp and stable-diffusion.cpp releases, and its scanner finds GGUF and Ollama models; Python engines such as motion-server and ocr-server are set up by hand from their own READMEs.</div>
+        <div class="callout"><b>Hemera is only a router.</b> Every engine is a separate program in its own project, like llama.cpp or stable-diffusion.cpp: hemera starts it, passes requests and answers through unchanged, and stops it. Hemera's downloader installs llama.cpp and stable-diffusion.cpp releases, and its scanner finds GGUF and Ollama models; Python engines are set up by hand from their own READMEs. Three engines are ours, each in its own repository with its whole setup: <a href="https://github.com/peprasetya/hemera-ocr-server">hemera-ocr-server</a> (text in pictures), <a href="https://github.com/peprasetya/hemera-motion-server">hemera-motion-server</a> (motion from words) and <a href="https://github.com/peprasetya/hemera-audio.cpp">hemera-audio.cpp</a> (audio.cpp with its large matrix multiplies on AMD's XDNA2 NPU).</div>
 
         <h3 id="engine-table">Supported binaries</h3>
         <div class="table-wrap">
@@ -206,23 +206,23 @@ ANTHROPIC_BASE_URL=http://host:12434 ANTHROPIC_AUTH_TOKEN=local \
                 <td><code>/v1/audio/transcriptions</code> <code>/v1/audio/translations</code> <code>/v1/realtime</code></td>
               </tr>
               <tr>
-                <td><b>audio.cpp</b><br><small>audiocpp_server</small></td>
+                <td><b>audio.cpp</b><br><small>audiocpp_server; on the NPU, our fork <a href="https://github.com/peprasetya/hemera-audio.cpp">hemera-audio.cpp</a></small></td>
                 <td>Text to speech, speaker diarization, live voice conversion</td>
                 <td>Custom; hemera writes its model config per model</td>
-                <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag ok">XDNA NPU</span><span class="tag">CPU</span></div></td>
+                <td><div class="tags"><span class="tag ind">Vulkan</span><span class="tag">CPU</span><span class="tag ok">XDNA NPU · fork</span></div></td>
                 <td><code>/v1/audio/speech</code> <code>/v1/audio/voices</code> <code>/v1/audio/voice-changer</code></td>
               </tr>
               <tr>
-                <td><b>motion-server</b><br><small>a separate project</small></td>
+                <td><b><a href="https://github.com/peprasetya/hemera-motion-server">hemera-motion-server</a></b><br><small>ours, MIT</small></td>
                 <td>A person's whole-body motion from words — Tencent's HY-Motion 1.0 in PyTorch</td>
-                <td>Custom — a Python venv, set up by hand; see <a href="#motion-setup">Motion setup</a></td>
+                <td>Custom — a Python venv, set up from its README; see <a href="#motion-setup">Motion setup</a></td>
                 <td><div class="tags"><span class="tag sun">ROCm</span><span class="tag">CUDA</span></div></td>
                 <td><code>/v1/motion/generations</code></td>
               </tr>
               <tr>
-                <td><b>ocr-server</b><br><small>a separate project</small></td>
+                <td><b><a href="https://github.com/peprasetya/hemera-ocr-server">hemera-ocr-server</a></b><br><small>ours, MIT</small></td>
                 <td>Text in pictures, with each line, word and character placed — PaddleOCR's models on ONNX Runtime</td>
-                <td>Custom — a Python venv, set up by hand; see <a href="#ocr-setup">OCR setup</a></td>
+                <td>Custom — a Python venv, set up from its README; see <a href="#ocr-setup">OCR setup</a></td>
                 <td><div class="tags"><span class="tag">CPU</span></div></td>
                 <td><code>/v1/ocr</code></td>
               </tr>
@@ -388,7 +388,7 @@ WARN  [instance] 'qwen3-coder' may fall back to CPU: 3 libraries not found
         <h3>Recognition — whisper.cpp</h3>
         <p>whisper.cpp publishes GPU builds only for Windows, so on Linux build it with <code>cmake -DGGML_VULKAN=ON</code> and point an engine at <code>build/bin/whisper-server</code>. Hemera starts it with <code>-l auto</code> (language detected) and, when ffmpeg is present, <code>--convert</code> (WebM, Ogg, M4A accepted). Turbo models only transcribe; <code>/v1/audio/translations</code> refuses them unless the model sets <code>"translates": true</code>. <code>/v1/realtime</code> is OpenAI's Realtime transcription session over WebSocket.</p>
         <h3>Synthesis — audio.cpp</h3>
-        <p><a href="https://github.com/0xShug0/audio.cpp">audio.cpp</a> reads its models from a config file, which hemera writes per model. A model names its audio.cpp <code>family</code> and <code>"mode": "streaming"</code> when the family streams. audio.cpp defaults to CUDA, hence <code>--backend</code>. Its NPU build for Ryzen AI chips can run the same voice: set it up as a second engine and model, and clients choose by name.</p>
+        <p><a href="https://github.com/0xShug0/audio.cpp">audio.cpp</a> reads its models from a config file, which hemera writes per model. A model names its audio.cpp <code>family</code> and <code>"mode": "streaming"</code> when the family streams. audio.cpp defaults to CUDA, hence <code>--backend</code>. Upstream audio.cpp has no NPU build; our fork, <a href="https://github.com/peprasetya/hemera-audio.cpp">hemera-audio.cpp</a>, is audio.cpp v0.9.3 with its large matrix multiplies on the XDNA2 NPU of Ryzen AI chips (Strix, Strix Halo, Krackan). Its <a href="https://github.com/peprasetya/hemera-audio.cpp/blob/npu-xdna/docs/build/xdna-npu.md">build guide</a> needs AMD's XRT and IRON; it keeps audio.cpp's Apache-2.0, and its own new files are MIT. Set the NPU build up as a second engine and model for the same voice, and clients choose by name.</p>
         <div class="term">
           <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
 <pre>"engines": {
@@ -483,7 +483,7 @@ curl http://host:12434/v1/3d/generations/3d_…/content -o teapot.glb</pre>
       <section id="motion">
         <h2>Motion API <span class="tag new">new</span></h2>
         <p class="section-lede">Words go in — <i>"a slow twirl, arms out"</i> — and 1 to 10 seconds of a person's whole-body motion come out, on a documented skeleton, for a client to play on its own figure. OpenAI defines no such endpoint, so this is hemera's own, with the same lifecycle as the <a href="#three">3D API</a>. The model is <code>hy-motion-1.0</code>, listed in <code>/v1/models</code> with kind <code>motion</code>.</p>
-        <div class="callout"><b>Hemera only routes this.</b> The motion itself comes from motion-server, a separate program in its own project that answers this API. Hemera starts it on the first request, passes requests and answers through unchanged, and stops it when idle. motion-server is not published yet; <a href="#motion-setup">Setup</a> lists what it is made of.</div>
+        <div class="callout"><b>Hemera only routes this.</b> The motion itself comes from <a href="https://github.com/peprasetya/hemera-motion-server">hemera-motion-server</a>, a separate program in its own repository that answers this API. Hemera starts it on the first request, passes requests and answers through unchanged, and stops it when idle. <a href="#motion-setup">Setup</a> says how to install it.</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Call</th><th>Purpose</th></tr></thead>
@@ -572,7 +572,7 @@ curl -X DELETE http://host:12434/v1/motion/generations/motion_3f9c…</pre>
         <div class="callout"><b>Licence.</b> HY-Motion's weights and code are under the Tencent HY-Motion 1.0 Community License. It does not apply in the European Union, the United Kingdom or South Korea; services that had more than 1 million monthly users need a licence from Tencent; outputs may not be used to improve other AI models. Tencent claims no rights in the outputs.</div>
 
         <h3 id="motion-setup">Setup</h3>
-        <p>Like every engine, motion-server is set up beside hemera, not inside it. Hemera's downloader installs llama.cpp and stable-diffusion.cpp releases only, and its scanner finds GGUF and Ollama models only, so a Python engine like this one is installed by hand from its own README. It runs Tencent's <a href="https://github.com/Tencent-Hunyuan/HY-Motion-1.0">HY-Motion 1.0</a> (December 2025), a flow-matching transformer with one billion parameters, with two text encoders. The downloads come to 22.3 GB, each pinned to a revision and checked by hash:</p>
+        <p>Like every engine, <a href="https://github.com/peprasetya/hemera-motion-server">hemera-motion-server</a> is set up beside hemera, not inside it, from its own README (MIT). Hemera's downloader installs llama.cpp and stable-diffusion.cpp releases only, and its scanner finds GGUF and Ollama models only, so a Python engine like this one is installed by hand. It runs Tencent's <a href="https://github.com/Tencent-Hunyuan/HY-Motion-1.0">HY-Motion 1.0</a> (December 2025), a flow-matching transformer with one billion parameters, with two text encoders. The downloads come to 22.3 GB, each pinned to a revision and checked by hash:</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>What</th><th>From</th><th>Size</th><th>Licence</th></tr></thead>
@@ -583,6 +583,15 @@ curl -X DELETE http://host:12434/v1/motion/generations/motion_3f9c…</pre>
               <tr><td>Tencent's code and body template</td><td><code>github.com/Tencent-Hunyuan/HY-Motion-1.0</code> @ <code>c71ea6c</code></td><td>~6 MB</td><td>Tencent HY-Motion 1.0 Community</td></tr>
             </tbody>
           </table>
+        </div>
+        <div class="term">
+          <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
+<pre>git clone https://github.com/peprasetya/hemera-motion-server /opt/motion/server
+/opt/motion/server/setup/fetch.sh /opt/motion        <span class="c"># 22.3 GB, resumable, each file checked</span>
+uv venv --python 3.12 /opt/motion/venv
+uv pip install --python /opt/motion/venv/bin/python torch \
+  --index-url https://download.pytorch.org/whl/cu128 <span class="c"># or the ROCm build for an AMD GPU</span>
+uv pip install --python /opt/motion/venv/bin/python -r /opt/motion/server/requirements.txt</pre>
         </div>
         <p>It runs in Python 3.12 with PyTorch on a GPU (ROCm or CUDA). Hemera then knows it as a custom engine; <code>"task": "motion"</code> is what routes <code>/v1/motion/generations</code> to it:</p>
         <div class="term">
@@ -617,7 +626,7 @@ curl -X DELETE http://host:12434/v1/motion/generations/motion_3f9c…</pre>
       <section id="ocr">
         <h2>OCR API</h2>
         <p class="section-lede">For apps that let a person select, copy or look up the text in a picture: <code>/v1/ocr</code> returns every line, word and character, with where it is. It stops there: translating the text, or asking about it, goes to <code>/v1/chat/completions</code> like any other text. The model is <code>pp-ocrv6</code>, listed in <code>/v1/models</code> with kind <code>ocr</code>.</p>
-        <div class="callout"><b>Hemera only routes this.</b> The reading comes from ocr-server, a separate program in its own project that answers this API itself: the request's checks and the answer's shape. Hemera picks the model from the options' <code>model</code>, refuses a picture over 50 MB, waits out the engine's start, passes request and answer through byte for byte, and stops the work when the client hangs up or after 60 s. ocr-server is not published yet; <a href="#ocr-setup">Setup</a> lists what it is made of.</div>
+        <div class="callout"><b>Hemera only routes this.</b> The reading comes from <a href="https://github.com/peprasetya/hemera-ocr-server">hemera-ocr-server</a>, a separate program in its own repository that answers this API itself: the request's checks and the answer's shape. Hemera picks the model from the options' <code>model</code>, refuses a picture over 50 MB, waits out the engine's start, passes request and answer through byte for byte, and stops the work when the client hangs up or after 60 s. <a href="#ocr-setup">Setup</a> says how to install it.</div>
         <div class="table-wrap">
           <table class="fields">
             <thead><tr><th>Call</th><th>Purpose</th></tr></thead>
@@ -695,7 +704,7 @@ curl -F image=@frame.png -F 'options={"region":[0,780,1920,300],"orientation":0}
         </ul>
 
         <h3 id="ocr-setup">Setup</h3>
-        <p>ocr-server is set up by hand from its own README, beside hemera. It reads with PaddleOCR's models in ONNX form, all from <code>huggingface.co/PaddlePaddle</code> under Apache-2.0, each pinned to a revision and checked by sha256 — 221 MB in all:</p>
+        <p><a href="https://github.com/peprasetya/hemera-ocr-server">hemera-ocr-server</a> is set up beside hemera from its own README (MIT). It reads with PaddleOCR's models in ONNX form, all from <code>huggingface.co/PaddlePaddle</code> under Apache-2.0, each pinned to a revision and checked by sha256 — 221 MB in all:</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Model</th><th>Does</th><th>Size</th></tr></thead>
@@ -709,6 +718,13 @@ curl -F image=@frame.png -F 'options={"region":[0,780,1920,300],"orientation":0}
           </table>
         </div>
         <p>Optional: <code>PP-OCRv6_small_det</code> and <code>PP-OCRv6_small_rec</code> (31 MB) are twice as fast but read Latin worse — 2.7% of characters wrong instead of 0.3%. The engine needs Python 3.13 with numpy, ONNX Runtime, OpenCV (headless), Pillow, PyYAML and <code>regex</code>, all prebuilt wheels, and no GPU.</p>
+        <div class="term">
+          <div class="bar"><span>shell</span><button class="copy" type="button">Copy</button></div>
+<pre>git clone https://github.com/peprasetya/hemera-ocr-server /opt/ocr/server
+/opt/ocr/server/setup/fetch.sh /opt/ocr              <span class="c"># 221 MB, each file checked</span>
+uv venv --python 3.13 /opt/ocr/venv
+uv pip install --python /opt/ocr/venv/bin/python -r /opt/ocr/server/requirements.txt</pre>
+        </div>
         <div class="term">
           <div class="bar"><span>hemera.json</span><button class="copy" type="button">Copy</button></div>
 <pre>"engines": {
